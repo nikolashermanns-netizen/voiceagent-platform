@@ -137,7 +137,30 @@ fi
 if [ -d "$REMOTE_DIR/.git" ]; then
     log "Repo existiert. Pulling latest..."
     cd "$REMOTE_DIR"
-    git pull || error "Git pull fehlgeschlagen"
+    if ! git pull 2>&1; then
+        # Pull failed - check if dirty files actually differ from HEAD
+        DIRTY_FILES=$(git diff --name-only)
+        if [ -z "$DIRTY_FILES" ]; then
+            # Untracked files or other issue
+            error "Git pull fehlgeschlagen"
+        fi
+        HAS_REAL_DIFF=false
+        for f in $DIRTY_FILES; do
+            if [ -n "$(git diff HEAD -- "$f")" ]; then
+                HAS_REAL_DIFF=true
+                break
+            fi
+        done
+        if [ "$HAS_REAL_DIFF" = false ]; then
+            warn "Lokale Dateien geaendert aber identisch mit HEAD. Resette..."
+            git checkout -- $DIRTY_FILES
+            git pull || error "Git pull fehlgeschlagen"
+        else
+            warn "Echte lokale Aenderungen gefunden:"
+            git diff --stat HEAD
+            error "Git pull abgebrochen. Bitte Aenderungen manuell mergen."
+        fi
+    fi
 else
     log "Repo clonen nach $REMOTE_DIR..."
     sudo mkdir -p "$(dirname "$REMOTE_DIR")"
@@ -255,7 +278,29 @@ fi
 cd "$REMOTE_DIR/voiceagent-platform"
 
 echo -e "\033[0;32m[Remote]\033[0m Pulling latest changes..."
-git -C "$REMOTE_DIR" pull
+if ! git -C "$REMOTE_DIR" pull 2>&1; then
+    cd "$REMOTE_DIR"
+    DIRTY_FILES=$(git diff --name-only)
+    if [ -z "$DIRTY_FILES" ]; then
+        echo -e "\033[0;31m[Remote]\033[0m Git pull fehlgeschlagen"; exit 1
+    fi
+    HAS_REAL_DIFF=false
+    for f in $DIRTY_FILES; do
+        if [ -n "$(git diff HEAD -- "$f")" ]; then
+            HAS_REAL_DIFF=true
+            break
+        fi
+    done
+    if [ "$HAS_REAL_DIFF" = false ]; then
+        echo -e "\033[1;33m[Remote]\033[0m Lokale Dateien geaendert aber identisch mit HEAD. Resette..."
+        git checkout -- $DIRTY_FILES
+        git pull || { echo -e "\033[0;31m[Remote]\033[0m Git pull fehlgeschlagen"; exit 1; }
+    else
+        echo -e "\033[1;33m[Remote]\033[0m Echte lokale Aenderungen gefunden:"
+        git diff --stat HEAD
+        echo -e "\033[0;31m[Remote]\033[0m Git pull abgebrochen. Bitte Aenderungen manuell mergen."; exit 1
+    fi
+fi
 
 echo -e "\033[0;32m[Remote]\033[0m Stopping services..."
 $COMPOSE down 2>/dev/null || true
