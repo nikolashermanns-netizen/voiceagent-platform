@@ -79,7 +79,7 @@ class IdeaStore:
 
     async def get(self, idea_id: str) -> Optional[Idea]:
         """Gibt eine Idee zurueck."""
-        row = await self.db.fetchone(
+        row = await self.db.fetch_one(
             "SELECT * FROM ideas WHERE id = ?", (idea_id,)
         )
         if row:
@@ -104,7 +104,7 @@ class IdeaStore:
 
         query += " ORDER BY created_at DESC"
 
-        rows = await self.db.fetchall(query, tuple(params))
+        rows = await self.db.fetch_all(query, tuple(params))
         return [self._row_to_idea(row) for row in rows]
 
     async def update(self, idea: Idea) -> Idea:

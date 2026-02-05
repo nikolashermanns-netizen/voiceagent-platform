@@ -79,7 +79,7 @@ class ProjectPlanner:
 
     async def get(self, project_id: str) -> Optional[Project]:
         """Gibt ein Projekt zurueck."""
-        row = await self.db.fetchone(
+        row = await self.db.fetch_one(
             "SELECT * FROM projects WHERE id = ?", (project_id,)
         )
         if row:

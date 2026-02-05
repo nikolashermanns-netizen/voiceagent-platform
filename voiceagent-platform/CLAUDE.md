@@ -15,6 +15,14 @@
 - Der `security_agent` darf NICHT per Intent-Routing erreichbar sein (keywords=[], matches_intent gibt 0.0)
 - Kein Agent darf Tools ausfuehren solange `_call_unlocked == False` (ausser security_agent)
 - Jeder neue Anruf startet mit `_call_unlocked = False`
+- Nach 3 falschen Code-Versuchen pro Anruf: `__HANGUP__` Signal -> Anruf wird beendet
+- `__HANGUP__` wird in `on_function_call()` in main.py erkannt (analog zu `__SWITCH__`)
+- Fehlgeschlagene Anrufe werden in `failed_unlock_calls` Tabelle aufgezeichnet
+- 3 fehlgeschlagene Anrufe einer Nummer in 12h -> automatische Blacklist
+- Blacklist-Check erfolgt in `on_incoming_call()` VOR dem Security Agent
+- Blacklisted Nummern werden sofort abgelehnt (reject_call 403)
+- Blacklist-Verwaltung: `core/app/blacklist/store.py`, API: GET/DELETE `/blacklist`
+- Web-Dashboard hat einen "Blacklist" Tab mit Entfernen-Button (X)
 
 ## Konventionen
 - Code-Kommentare und Docstrings auf Deutsch

@@ -63,6 +63,7 @@
         DOM.codingFiles    = document.getElementById('coding-files');
         DOM.codingTools    = document.getElementById('coding-tools');
         DOM.ideasList      = document.getElementById('ideas-list');
+        DOM.blacklistList  = document.getElementById('blacklist-list');
         DOM.agentsList     = document.getElementById('agents-list');
         DOM.firewallStatus = document.getElementById('firewall-status');
         DOM.btnFirewallToggle = document.getElementById('btn-firewall-toggle');
@@ -279,6 +280,11 @@
                 State.firewallEnabled = data.enabled;
                 UI.updateFirewall(data.enabled);
             },
+
+            blacklist_updated: function () {
+                fetchBlacklist();
+                addDebug('[BLACKLIST] Aktualisiert');
+            },
         },
     };
 
@@ -454,6 +460,38 @@
             DOM.firewallStatus.textContent = 'Status: ' + (enabled ? 'Aktiv' : 'DEAKTIVIERT');
             DOM.firewallStatus.style.color = enabled ? '' : 'var(--ctp-red)';
         },
+
+        updateBlacklist: function (entries) {
+            DOM.blacklistList.innerHTML = '';
+            if (!entries || entries.length === 0) {
+                DOM.blacklistList.innerHTML = '<div class="empty-state">Keine gesperrten Nummern</div>';
+                return;
+            }
+
+            entries.forEach(function (entry) {
+                var div = document.createElement('div');
+                div.className = 'blacklist-item';
+
+                var date = entry.blocked_at ? new Date(entry.blocked_at).toLocaleString('de-DE') : '';
+
+                div.innerHTML =
+                    '<div class="blacklist-item__info">' +
+                        '<span class="blacklist-item__number">' + esc(entry.caller_id || '') + '</span>' +
+                        '<span class="blacklist-item__meta">' + esc(date) +
+                        (entry.reason ? ' — ' + esc(entry.reason) : '') + '</span>' +
+                    '</div>' +
+                    '<button class="btn btn--small btn--danger blacklist-item__remove" data-caller-id="' +
+                        esc(entry.caller_id || '') + '">&#10005;</button>';
+
+                DOM.blacklistList.appendChild(div);
+            });
+
+            DOM.blacklistList.querySelectorAll('[data-caller-id]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    removeFromBlacklist(this.getAttribute('data-caller-id'));
+                });
+            });
+        },
     };
 
     // ============================================
@@ -481,6 +519,21 @@
         fetch('/tasks/' + taskId + '/cancel', { method: 'POST' })
             .then(function () { fetchTasks(); })
             .catch(function (e) { addDebug('[API] Cancel: ' + e.message); });
+    }
+
+    function fetchBlacklist() {
+        fetch('/blacklist')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                UI.updateBlacklist(data.entries || []);
+            })
+            .catch(function (e) { addDebug('[API] Blacklist: ' + e.message); });
+    }
+
+    function removeFromBlacklist(callerId) {
+        fetch('/blacklist/' + encodeURIComponent(callerId), { method: 'DELETE' })
+            .then(function () { fetchBlacklist(); })
+            .catch(function (e) { addDebug('[API] Blacklist Remove: ' + e.message); });
     }
 
     function toggleFirewall() {
@@ -568,8 +621,10 @@
         bindEvents();
         WS.connect();
 
-        // Periodic task refresh
+        // Periodic refresh
         setInterval(fetchTasks, 10000);
+        setInterval(fetchBlacklist, 10000);
+        fetchBlacklist();
     }
 
     if (document.readyState === 'loading') {

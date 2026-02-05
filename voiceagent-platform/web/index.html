@@ -55,6 +55,7 @@
                 <button class="tabs__tab tabs__tab--active" role="tab" data-tab="tasks" aria-selected="true">Tasks</button>
                 <button class="tabs__tab" role="tab" data-tab="coding" aria-selected="false">Coding</button>
                 <button class="tabs__tab" role="tab" data-tab="ideen" aria-selected="false">Ideen</button>
+                <button class="tabs__tab" role="tab" data-tab="blacklist" aria-selected="false">Blacklist</button>
                 <button class="tabs__tab" role="tab" data-tab="agenten" aria-selected="false">Agenten</button>
                 <button class="tabs__tab" role="tab" data-tab="debug" aria-selected="false">Debug</button>
             </nav>
@@ -90,6 +91,14 @@
             <div class="tabs__content" id="tab-ideen" role="tabpanel" data-tab="ideen">
                 <div id="ideas-list">
                     <div class="empty-state">Keine Ideen</div>
+                </div>
+            </div>
+
+            <!-- Blacklist -->
+            <div class="tabs__content" id="tab-blacklist" role="tabpanel" data-tab="blacklist">
+                <h3 class="section-title">Gesperrte Nummern</h3>
+                <div id="blacklist-list">
+                    <div class="empty-state">Keine gesperrten Nummern</div>
                 </div>
             </div>
 

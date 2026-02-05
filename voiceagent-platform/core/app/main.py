@@ -117,7 +117,7 @@ async def on_incoming_call(caller_id: str, remote_ip: str = None):
 
     # Begruessung nach kurzer Verzoegerung
     async def delayed_greeting():
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(0.2)
         await voice_client.trigger_greeting()
 
     asyncio.create_task(delayed_greeting())

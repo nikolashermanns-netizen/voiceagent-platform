@@ -140,7 +140,7 @@ class VoiceClient:
                     "type": "server_vad",
                     "threshold": 0.4,
                     "prefix_padding_ms": 200,
-                    "silence_duration_ms": 400,
+                    "silence_duration_ms": 300,
                     "create_response": True
                 },
                 "tools": self._tools,
@@ -350,7 +350,7 @@ class VoiceClient:
                     f"(call_id={call_id})"
                 )
                 # Kurz warten bis die vorherige Response fertig ist
-                for _ in range(50):  # Max 5 Sekunden warten
+                for _ in range(10):  # Max 1 Sekunde warten (vorher: 50 * 0.1 = 5s)
                     await asyncio.sleep(0.1)
                     if not self._response_in_progress:
                         break
@@ -372,7 +372,7 @@ class VoiceClient:
         Args:
             audio_data: PCM16 Audio @ 16kHz
         """
-        if not self._ws or not self._running:
+        if not self._ws or not self._running or self._ws.closed:
             return
 
         try:
@@ -391,7 +391,8 @@ class VoiceClient:
             }))
 
         except Exception as e:
-            logger.warning(f"Audio senden Fehler: {e}")
+            if self._running:
+                logger.warning(f"Audio senden Fehler: {e}")
 
     async def disconnect(self):
         """Verbindung trennen."""

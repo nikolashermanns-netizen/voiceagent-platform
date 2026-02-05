@@ -419,6 +419,36 @@ body {
 .agent-card__desc { font-size: var(--font-size-sm); color: var(--ctp-subtext0); margin-top: var(--space-xs); }
 .agent-card__meta { font-size: var(--font-size-sm); color: var(--ctp-overlay0); margin-top: var(--space-xs); }
 
+/* === Blacklist === */
+.blacklist-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--color-border);
+}
+.blacklist-item__info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.blacklist-item__number {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--ctp-red);
+}
+.blacklist-item__meta {
+    font-size: var(--font-size-sm);
+    color: var(--ctp-overlay0);
+}
+.blacklist-item__remove {
+    min-width: 28px;
+    min-height: 28px;
+    padding: var(--space-xs);
+    font-size: var(--font-size-md);
+    line-height: 1;
+}
+
 /* === Firewall === */
 .firewall-section { margin-top: var(--space-xl); }
 .firewall-controls {

@@ -528,7 +528,7 @@ class SIPClient:
         """Verarbeitet Events aus dem PJSIP Thread."""
         while self._running:
             try:
-                event = await asyncio.wait_for(self._event_queue.get(), timeout=0.5)
+                event = await asyncio.wait_for(self._event_queue.get(), timeout=0.1)
                 event_type = event.get("type")
 
                 if event_type == "incoming_call":
