@@ -35,12 +35,24 @@ class Settings(BaseSettings):
     # Agents
     AGENTS_DIR: str = "/app/agents"
 
-    # Code-Sandbox
+    # Code-Sandbox (Legacy, wird durch Claude CLI ersetzt)
     SANDBOX_ENABLED: bool = True
     SANDBOX_TIMEOUT: int = 300  # 5 Minuten
     SANDBOX_MEM_LIMIT: str = "2g"
     SANDBOX_CPU_LIMIT: float = 2.0
     WORKSPACE_DIR: str = "/app/workspace"
+
+    # Claude Coding Agent (Agent SDK)
+    ANTHROPIC_API_KEY: str = ""
+    CLAUDE_MODEL: str = "claude-sonnet-4-20250514"
+    CLAUDE_MAX_BUDGET: float = 2.0  # Max USD pro Aufgabe
+    CLAUDE_MAX_TURNS: int = 50  # Max Iterationen pro Aufgabe
+    CLAUDE_ALLOWED_TOOLS: list[str] = [
+        "Read", "Edit", "Write", "Glob", "Grep",
+        "Bash(python *)", "Bash(npm *)", "Bash(node *)",
+        "Bash(pip install *)", "Bash(pytest *)", "Bash(git *)",
+        "Bash(ls *)", "Bash(mkdir *)", "Bash(cat *)",
+    ]
 
     # Logging
     LOG_LEVEL: str = "INFO"

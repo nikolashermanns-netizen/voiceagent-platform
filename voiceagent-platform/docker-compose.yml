@@ -14,13 +14,16 @@ services:
       - ./data:/app/data
       - ./workspace:/app/workspace
       - ./config:/app/config
-      # Katalog-Daten (read-only)
-      - ../Bestell Bot Voice/server/system_katalog:/app/data/system_katalog:ro
+      # Katalog-Daten liegen in ./data/system_katalog
+      # Lokal: kopiert aus ../Bestell Bot Voice/server/system_katalog
+      # Server: liegt direkt im data/ Ordner
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_PATH=/app/data/voiceagent.db
       - AGENTS_DIR=/app/agents
       - WORKSPACE_DIR=/app/workspace
+      # Claude Agent SDK (Code-Agent)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 
   code-sandbox:
     build:

@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-# System Dependencies fuer PJSIP
+# System Dependencies fuer PJSIP + Node.js (fuer Claude CLI)
 RUN apt-get update && apt-get install -y \
     build-essential \
     libasound2-dev \
@@ -12,7 +12,17 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     swig \
     wget \
+    curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
+
+# Node.js installieren (fuer Claude CLI)
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Claude CLI installieren
+RUN npm install -g @anthropic-ai/claude-code
 
 # PJSIP aus Source kompilieren
 WORKDIR /tmp

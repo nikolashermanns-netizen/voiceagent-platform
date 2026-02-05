@@ -39,6 +39,7 @@ def setup_ws_routes(app_state):
         - transcript: Transkript-Updates
         - task_update: Task-Status-Aenderung
         - agent_changed: Agent gewechselt
+        - coding_progress: Claude Coding-Fortschritt
         - firewall_status: Firewall-Status
         """
         ws_manager: ConnectionManager = app_state.get("ws_manager")

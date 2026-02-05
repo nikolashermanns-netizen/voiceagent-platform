@@ -281,6 +281,12 @@ async def lifespan(app: FastAPI):
         "ws_manager": ws_manager,
     })
 
+    # WebSocket-Manager in Code-Agent injizieren (fuer Coding-Progress)
+    code_agent = agent_registry.get_agent("code_agent")
+    if code_agent and hasattr(code_agent, "set_ws_manager"):
+        code_agent.set_ws_manager(ws_manager)
+        logger.info("WebSocket-Manager in Code-Agent injiziert")
+
     # Event Handler verbinden
     sip_client.on_incoming_call = on_incoming_call
     sip_client.on_audio_received = on_audio_from_caller

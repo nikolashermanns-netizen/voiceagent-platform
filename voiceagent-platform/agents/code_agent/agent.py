@@ -1,56 +1,65 @@
 """
 Code-Agent fuer VoiceAgent Platform.
 
-Kann per Sprache Code schreiben und in einer Docker-Sandbox ausfuehren.
-Unterstuetzt Python, JavaScript und Bash.
+Nutzt Claude Agent SDK um per Sprache echte Software-Engineering-Aufgaben
+auszufuehren: Code schreiben, debuggen, refactoren, Tests laufen lassen.
 """
 
+import asyncio
 import logging
+import os
 from typing import Optional
 
 from core.app.agents.base import BaseAgent
-from agents.code_agent.sandbox import CodeSandbox
+from core.app.config import settings
+from agents.code_agent.claude_bridge import ClaudeCodingBridge
+from agents.code_agent.session_store import CodingSessionStore
 from agents.code_agent.project_manager import ProjectManager
 
 logger = logging.getLogger(__name__)
 
-CODE_AGENT_INSTRUCTIONS = """Du bist ein Programmier-Assistent der per Telefon Code schreiben und ausfuehren kann.
+CODE_AGENT_INSTRUCTIONS = """Du bist ein Programmier-Assistent der per Telefon komplexe Coding-Aufgaben erledigen kann.
 
 === DEIN STIL ===
 - Sei freundlich und hilfsbereit
 - Erklaere was du tust, kurz und verstaendlich
-- Benutze einfache Sprache, keine ueberfluessigen Fachbegriffe
+- Antworte immer sprachfreundlich (wird vorgelesen!)
 
 === DEINE FAEHIGKEITEN ===
-1. CODE SCHREIBEN: Du kannst Python, JavaScript und Bash Code schreiben
-2. CODE AUSFUEHREN: Code wird sicher in einer Sandbox ausgefuehrt
-3. DATEIEN VERWALTEN: Dateien im Projekt erstellen und anzeigen
+1. CODING-AUFGABEN: Du kannst komplette Features, Bug-Fixes, Refactorings ausfuehren lassen
+2. PROJEKT-STATUS: Du kannst den aktuellen Stand eines Projekts abfragen
+3. PROJEKTE VERWALTEN: Du kannst Projekte erstellen und auflisten
 
 === ABLAUF ===
 1. Hoere was der Benutzer will
-2. Schreibe den Code mit 'code_schreiben'
-3. Fuehre ihn aus mit 'code_ausfuehren'
-4. Erklaere das Ergebnis
-
-=== SICHERHEIT ===
-- Code laeuft in isolierter Sandbox (kein Netzwerk)
-- Timeout nach 5 Minuten
-- Nur Python, JavaScript, Bash
+2. Nutze 'coding_aufgabe' fuer die eigentliche Programmierarbeit
+3. Claude CLI fuehrt die Aufgabe im Hintergrund aus
+4. Erklaere das Ergebnis kurz und verstaendlich
 
 === REGELN ===
-- Erklaere Ergebnisse kurz und verstaendlich (fuer Sprachausgabe!)
+- Erklaere Ergebnisse kurz (fuer Sprachausgabe!)
+- Fasse zusammen was gemacht wurde, nicht jede einzelne Zeile Code
 - Bei Fehlern: Erklaere was schief ging und frage ob du es fixen sollst
-- Halte Code einfach und lesbar
-- Frage bei Unklarheiten nach"""
+- Frage bei Unklarheiten nach
+- Nutze 'projekt_status' wenn der User nach dem Stand fragt"""
 
 
 class CodeAgent(BaseAgent):
-    """Agent fuer Code-Erstellung und -Ausfuehrung."""
+    """Agent fuer Code-Erstellung mit Claude Agent SDK."""
 
     def __init__(self):
-        self._sandbox = CodeSandbox()
+        self._bridge = ClaudeCodingBridge(settings.WORKSPACE_DIR)
+        self._session_store = CodingSessionStore(
+            os.path.join(os.path.dirname(settings.DATABASE_PATH), "coding_sessions.db")
+        )
         self._project_manager = ProjectManager()
         self._current_project = "default"
+        self._ws_manager = None  # Wird via set_ws_manager gesetzt
+        self._running_tasks: dict[str, asyncio.Task] = {}
+
+    def set_ws_manager(self, ws_manager):
+        """Setzt den WebSocket-Manager fuer Progress-Updates."""
+        self._ws_manager = ws_manager
 
     @property
     def name(self) -> str:
@@ -62,90 +71,108 @@ class CodeAgent(BaseAgent):
 
     @property
     def description(self) -> str:
-        return "Schreibt und fuehrt Code aus per Sprache. Python, JavaScript, Bash in sicherer Sandbox."
+        return (
+            "Programmier-Assistent mit Claude CLI. Kann komplette Features bauen, "
+            "Bugs fixen, Code refactoren und Tests laufen lassen."
+        )
 
     @property
     def capabilities(self) -> list[str]:
-        return ["programmieren", "code", "script", "automatisierung", "berechnung"]
+        return [
+            "programmieren", "code", "script", "automatisierung",
+            "berechnung", "debugging", "refactoring", "testing",
+        ]
 
     @property
     def keywords(self) -> list[str]:
         return [
-            "programmieren", "code", "python", "javascript", "script",
-            "berechne", "rechne", "programm", "funktion", "algorithmus",
-            "automatisiere", "skript", "bash",
+            "programmieren", "code", "python", "javascript", "typescript",
+            "script", "berechne", "rechne", "programm", "funktion",
+            "algorithmus", "automatisiere", "skript", "bash", "api",
+            "feature", "bug", "fix", "refactor", "test", "deploy",
+            "erstelle", "baue", "implementiere", "entwickle",
         ]
 
     def get_tools(self) -> list[dict]:
         return [
             {
                 "type": "function",
-                "name": "code_schreiben",
-                "description": "Schreibt Code in eine Datei im Projekt. Der Code kann danach ausgefuehrt werden.",
+                "name": "coding_aufgabe",
+                "description": (
+                    "Fuehrt eine Programmier-Aufgabe mit Claude CLI aus. "
+                    "Kann Code schreiben, Dateien bearbeiten, Bugs fixen, "
+                    "Tests laufen lassen, ganze Features bauen. "
+                    "Nutze dies fuer alle Coding-Anfragen."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "dateiname": {
+                        "aufgabe": {
                             "type": "string",
-                            "description": "Name der Datei (z.B. 'main.py', 'script.js')"
+                            "description": (
+                                "Detaillierte Beschreibung der Aufgabe. "
+                                "Z.B. 'Erstelle eine FastAPI Route fuer User-Registration "
+                                "mit Endpoints POST /register, POST /login und GET /me. "
+                                "Nutze SQLite und Pydantic.'"
+                            ),
                         },
-                        "code": {
+                        "projekt": {
                             "type": "string",
-                            "description": "Der Code der geschrieben werden soll"
+                            "description": (
+                                "Projekt-Name. Wird als Ordnername verwendet. "
+                                "Z.B. 'user-api', 'web-scraper', 'daten-analyse'. "
+                                "Falls nicht angegeben wird 'default' verwendet."
+                            ),
                         },
-                        "sprache": {
-                            "type": "string",
-                            "enum": ["python", "javascript", "bash"],
-                            "description": "Programmiersprache"
-                        }
                     },
-                    "required": ["dateiname", "code", "sprache"]
-                }
+                    "required": ["aufgabe"],
+                },
             },
             {
                 "type": "function",
-                "name": "code_ausfuehren",
-                "description": "Fuehrt Code sicher in einer Sandbox aus.",
+                "name": "projekt_status",
+                "description": (
+                    "Zeigt den aktuellen Stand eines Projekts. "
+                    "Welche Dateien gibt es, was wurde bisher gemacht."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "code": {
+                        "projekt": {
                             "type": "string",
-                            "description": "Der auszufuehrende Code"
+                            "description": "Projekt-Name. Falls nicht angegeben wird 'default' verwendet.",
                         },
-                        "sprache": {
-                            "type": "string",
-                            "enum": ["python", "javascript", "bash"],
-                            "description": "Programmiersprache"
-                        }
                     },
-                    "required": ["code", "sprache"]
-                }
+                    "required": [],
+                },
             },
             {
                 "type": "function",
-                "name": "dateien_zeigen",
-                "description": "Zeigt alle Dateien im aktuellen Projekt.",
+                "name": "projekte_auflisten",
+                "description": "Listet alle vorhandenen Projekte auf.",
                 "parameters": {
                     "type": "object",
                     "properties": {},
-                    "required": []
-                }
+                    "required": [],
+                },
             },
             {
                 "type": "function",
-                "name": "datei_lesen",
-                "description": "Liest den Inhalt einer Datei im Projekt.",
+                "name": "session_zuruecksetzen",
+                "description": (
+                    "Setzt die Coding-Session eines Projekts zurueck. "
+                    "Claude vergisst dann den bisherigen Kontext fuer dieses Projekt."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "dateiname": {
+                        "projekt": {
                             "type": "string",
-                            "description": "Name der Datei"
-                        }
+                            "description": "Projekt-Name dessen Session zurueckgesetzt werden soll.",
+                        },
                     },
-                    "required": ["dateiname"]
-                }
+                    "required": ["projekt"],
+                },
             },
         ]
 
@@ -153,68 +180,112 @@ class CodeAgent(BaseAgent):
         return CODE_AGENT_INSTRUCTIONS
 
     async def execute_tool(self, tool_name: str, arguments: dict) -> str:
-        logger.info(f"[CodeAgent] Tool: {tool_name}")
+        logger.info(f"[CodeAgent] Tool: {tool_name}, Args: {arguments}")
 
-        if tool_name == "code_schreiben":
-            return await self._code_schreiben(arguments)
-        elif tool_name == "code_ausfuehren":
-            return await self._code_ausfuehren(arguments)
-        elif tool_name == "dateien_zeigen":
-            return self._dateien_zeigen()
-        elif tool_name == "datei_lesen":
-            return self._datei_lesen(arguments)
+        if tool_name == "coding_aufgabe":
+            return await self._coding_aufgabe(arguments)
+        elif tool_name == "projekt_status":
+            return await self._projekt_status(arguments)
+        elif tool_name == "projekte_auflisten":
+            return await self._projekte_auflisten()
+        elif tool_name == "session_zuruecksetzen":
+            return await self._session_zuruecksetzen(arguments)
         else:
             return f"Unbekannte Funktion: {tool_name}"
 
-    async def _code_schreiben(self, args: dict) -> str:
-        dateiname = args.get("dateiname", "main.py")
-        code = args.get("code", "")
-        sprache = args.get("sprache", "python")
+    async def _coding_aufgabe(self, args: dict) -> str:
+        """Fuehrt eine Coding-Aufgabe mit Claude aus."""
+        aufgabe = args.get("aufgabe", "")
+        project_id = args.get("projekt", "default")
 
-        if not code:
-            return "Fehler: Kein Code angegeben."
+        if not aufgabe:
+            return "Fehler: Keine Aufgabe angegeben."
 
-        success = self._project_manager.write_file(
-            self._current_project, dateiname, code
+        # Projekt sicherstellen
+        self._project_manager.create_project(
+            project_id, project_id, f"Erstellt fuer Aufgabe: {aufgabe[:100]}"
         )
 
-        if success:
-            return f"Datei '{dateiname}' geschrieben ({len(code)} Zeichen, {sprache})."
-        return f"Fehler beim Schreiben von '{dateiname}'."
-
-    async def _code_ausfuehren(self, args: dict) -> str:
-        code = args.get("code", "")
-        sprache = args.get("sprache", "python")
-
-        if not code:
-            return "Fehler: Kein Code angegeben."
-
-        result = await self._sandbox.execute(
-            code=code, language=sprache, project_id=self._current_project
+        logger.info(
+            f"[CodeAgent] Starte Coding-Aufgabe: '{aufgabe[:80]}...' "
+            f"(Projekt: {project_id})"
         )
 
-        return result.to_string()
+        # Progress-Callback fuer WebSocket
+        async def on_progress(message: str):
+            if self._ws_manager:
+                await self._ws_manager.broadcast({
+                    "type": "coding_progress",
+                    "project_id": project_id,
+                    "status": "running",
+                    "current_action": message[:200],
+                })
 
-    def _dateien_zeigen(self) -> str:
-        files = self._project_manager.list_files(self._current_project)
+        # Claude-Aufgabe ausfuehren
+        result = await self._bridge.execute_task(
+            prompt=aufgabe,
+            project_id=project_id,
+            on_progress=on_progress,
+            session_store=self._session_store,
+        )
+
+        # Abschluss an GUI melden
+        if self._ws_manager:
+            await self._ws_manager.broadcast({
+                "type": "coding_progress",
+                "project_id": project_id,
+                "status": "completed" if result.success else "failed",
+                "current_action": "Fertig" if result.success else f"Fehler: {result.error}",
+                "files_changed": result.files_changed,
+                "tools_used": result.tools_used,
+            })
+
+        return result.to_voice_summary()
+
+    async def _projekt_status(self, args: dict) -> str:
+        """Fragt den Projekt-Status ab."""
+        project_id = args.get("projekt", "default")
+
+        # Schnelle Dateiliste
+        files = self._project_manager.list_files(project_id)
         if not files:
-            return "Keine Dateien im Projekt."
+            return f"Projekt '{project_id}' ist leer. Noch keine Dateien vorhanden."
 
-        lines = [f"=== Dateien im Projekt '{self._current_project}' ==="]
-        for f in files:
-            lines.append(f"  - {f}")
+        # Claude fuer detaillierten Status nutzen
+        status = await self._bridge.get_project_status(project_id)
+        return status
+
+    async def _projekte_auflisten(self) -> str:
+        """Listet alle Projekte auf."""
+        projects = self._project_manager.list_projects()
+        if not projects:
+            return "Noch keine Projekte vorhanden."
+
+        lines = ["Vorhandene Projekte:"]
+        for p in projects:
+            name = p.get("name", p.get("id", "?"))
+            file_count = len(self._project_manager.list_files(p["id"]))
+            lines.append(f"- {name}: {file_count} Dateien")
+
         return "\n".join(lines)
 
-    def _datei_lesen(self, args: dict) -> str:
-        dateiname = args.get("dateiname", "")
-        if not dateiname:
-            return "Fehler: Kein Dateiname angegeben."
+    async def _session_zuruecksetzen(self, args: dict) -> str:
+        """Setzt die Claude-Session eines Projekts zurueck."""
+        project_id = args.get("projekt", "default")
 
-        content = self._project_manager.read_file(self._current_project, dateiname)
-        if content is None:
-            return f"Datei '{dateiname}' nicht gefunden."
+        self._bridge.clear_session(project_id)
+        await self._session_store.clear_session(project_id)
 
-        return f"=== {dateiname} ===\n{content}"
+        return f"Session fuer Projekt '{project_id}' wurde zurueckgesetzt. Claude startet beim naechsten Auftrag ohne Kontext."
+
+    async def on_call_start(self, caller_id: str):
+        """Setup bei Anrufbeginn."""
+        logger.info(f"[CodeAgent] Call gestartet: {caller_id}")
+
+    async def on_call_end(self, caller_id: str):
+        """Cleanup bei Anrufende."""
+        logger.info(f"[CodeAgent] Call beendet: {caller_id}")
+        # Laufende Tasks nicht abbrechen - die laufen im Hintergrund weiter
 
 
 def create_agent() -> BaseAgent:
