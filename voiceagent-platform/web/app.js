@@ -84,6 +84,10 @@
         return d.innerHTML;
     }
 
+    function escAttr(str) {
+        return esc(str).replace(/"/g, '&quot;');
+    }
+
     function ts() {
         return new Date().toTimeString().substring(0, 8);
     }
@@ -666,17 +670,15 @@
                         '<span class="blacklist-item__number">' + esc(entry.caller_id || '') + '</span>' +
                         '<span class="blacklist-item__meta">' + esc(date) +
                         (entry.reason ? ' — ' + esc(entry.reason) : '') + '</span>' +
-                    '</div>' +
-                    '<button class="btn btn--small btn--danger blacklist-item__remove" data-caller-id="' +
-                        esc(entry.caller_id || '') + '">&#10005;</button>';
+                    '</div>';
+
+                var btn = document.createElement('button');
+                btn.className = 'btn btn--small btn--danger blacklist-item__remove';
+                btn.setAttribute('data-caller-id', entry.caller_id || '');
+                btn.innerHTML = '&#10005;';
+                div.appendChild(btn);
 
                 DOM.blacklistList.appendChild(div);
-            });
-
-            DOM.blacklistList.querySelectorAll('[data-caller-id]').forEach(function (btn) {
-                btn.addEventListener('click', function () {
-                    removeFromBlacklist(this.getAttribute('data-caller-id'));
-                });
             });
         },
     };
@@ -824,6 +826,14 @@
         });
 
         DOM.btnFirewallToggle.addEventListener('click', toggleFirewall);
+
+        // Blacklist: Event delegation (survives DOM re-renders from periodic refresh)
+        DOM.blacklistList.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-caller-id]');
+            if (btn) {
+                removeFromBlacklist(btn.getAttribute('data-caller-id'));
+            }
+        });
 
         if (DOM.btnRefreshIdeas) {
             DOM.btnRefreshIdeas.addEventListener('click', fetchIdeas);
