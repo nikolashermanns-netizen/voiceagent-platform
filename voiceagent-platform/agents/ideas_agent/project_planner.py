@@ -96,7 +96,7 @@ class ProjectPlanner:
             params.append(status)
 
         query += " ORDER BY created_at DESC"
-        rows = await self.db.fetchall(query, tuple(params))
+        rows = await self.db.fetch_all(query, tuple(params))
         return [self._row_to_project(row) for row in rows]
 
     async def update(self, project: Project) -> Project:

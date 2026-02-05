@@ -119,11 +119,15 @@ class IdeaStore:
         )
         return idea
 
-    async def delete(self, idea_id: str) -> bool:
-        """Loescht eine Idee."""
-        await self.db.execute("DELETE FROM ideas WHERE id = ?", (idea_id,))
-        logger.info(f"Idee geloescht: {idea_id}")
-        return True
+    async def archive(self, idea_id: str) -> Optional[Idea]:
+        """Archiviert eine Idee (Status auf 'archived' setzen, niemals loeschen)."""
+        idea = await self.get(idea_id)
+        if not idea:
+            return None
+        idea.status = "archived"
+        await self.update(idea)
+        logger.info(f"Idee archiviert: {idea_id} ({idea.title})")
+        return idea
 
     async def add_note(self, idea_id: str, note: str) -> Optional[Idea]:
         """Fuegt eine Notiz zu einer Idee hinzu."""

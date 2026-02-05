@@ -419,6 +419,169 @@ body {
 .agent-card__desc { font-size: var(--font-size-sm); color: var(--ctp-subtext0); margin-top: var(--space-xs); }
 .agent-card__meta { font-size: var(--font-size-sm); color: var(--ctp-overlay0); margin-top: var(--space-xs); }
 
+/* === Ideas === */
+.idea-category {
+    margin-bottom: var(--space-lg);
+}
+
+.idea-category__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-xs) 0;
+    margin-bottom: var(--space-sm);
+}
+
+.idea-category__label {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.idea-category__label--software   { color: var(--ctp-blue); }
+.idea-category__label--business   { color: var(--ctp-green); }
+.idea-category__label--automation { color: var(--ctp-peach); }
+.idea-category__label--kreativ    { color: var(--ctp-pink); }
+.idea-category__label--sonstiges  { color: var(--ctp-overlay1); }
+
+.idea-category__count {
+    font-size: var(--font-size-sm);
+    color: var(--ctp-overlay0);
+}
+
+.idea-card {
+    padding: var(--space-md);
+    background: var(--color-bg-raised);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-sm);
+    border: 1px solid var(--color-border);
+    transition: border-color 0.15s;
+}
+
+.idea-card:hover {
+    border-color: var(--ctp-surface2);
+}
+
+.idea-card--archived {
+    opacity: 0.5;
+}
+
+.idea-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-xs);
+}
+
+.idea-card__title {
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.idea-card__status {
+    font-size: var(--font-size-sm);
+    padding: 2px var(--space-sm);
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+}
+
+.idea-card__status--new      { background: var(--ctp-blue);     color: var(--ctp-base); }
+.idea-card__status--active   { background: var(--ctp-green);    color: var(--ctp-base); }
+.idea-card__status--archived { background: var(--ctp-surface1); color: var(--ctp-overlay0); }
+
+.idea-card__category {
+    font-size: var(--font-size-sm);
+    color: var(--ctp-overlay0);
+}
+
+.idea-card__desc {
+    font-size: var(--font-size-sm);
+    color: var(--ctp-subtext0);
+    margin-bottom: var(--space-sm);
+    line-height: 1.4;
+}
+
+.idea-card__notes {
+    font-size: var(--font-size-sm);
+    color: var(--ctp-mauve);
+    margin-bottom: var(--space-sm);
+}
+
+.idea-card__footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.idea-card__date {
+    font-size: var(--font-size-sm);
+    color: var(--ctp-overlay0);
+}
+
+.idea-card__archive {
+    font-size: var(--font-size-sm);
+    color: var(--ctp-overlay1);
+}
+.idea-card__archive:hover {
+    color: var(--ctp-yellow);
+}
+
+.idea-archive-section {
+    margin-top: var(--space-lg);
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-md);
+}
+
+.idea-archive-toggle {
+    color: var(--ctp-overlay0);
+    font-size: var(--font-size-sm);
+}
+
+/* === Projects === */
+.project-card {
+    padding: var(--space-md);
+    background: var(--color-bg-raised);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-sm);
+    border: 1px solid var(--ctp-surface1);
+    border-left: 3px solid var(--ctp-mauve);
+}
+
+.project-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-xs);
+}
+
+.project-card__title {
+    font-weight: 600;
+    color: var(--ctp-mauve);
+}
+
+.project-card__status {
+    font-size: var(--font-size-sm);
+    padding: 2px var(--space-sm);
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+}
+
+.project-card__status--planning     { background: var(--ctp-yellow);   color: var(--ctp-base); }
+.project-card__status--in_progress  { background: var(--ctp-blue);     color: var(--ctp-base); }
+.project-card__status--completed    { background: var(--ctp-green);    color: var(--ctp-base); }
+
+.project-card__desc {
+    font-size: var(--font-size-sm);
+    color: var(--ctp-subtext0);
+    margin-bottom: var(--space-sm);
+}
+
+.project-card__meta {
+    font-size: var(--font-size-sm);
+    color: var(--ctp-overlay0);
+}
+
 /* === Blacklist === */
 .blacklist-item {
     display: flex;

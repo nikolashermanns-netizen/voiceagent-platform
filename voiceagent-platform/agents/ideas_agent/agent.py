@@ -24,8 +24,9 @@ IDEAS_AGENT_INSTRUCTIONS = """Du bist ein Ideen-Assistent der per Telefon Ideen 
 === DEINE FAEHIGKEITEN ===
 1. IDEEN ERFASSEN: Neue Ideen aufnehmen mit Titel und Beschreibung
 2. IDEEN ANZEIGEN: Bestehende Ideen auflisten
-3. PROJEKTE ERSTELLEN: Aus Ideen ein Projekt planen
-4. PROJEKT-STATUS: Stand eines Projekts abfragen
+3. IDEEN ARCHIVIEREN: Ideen koennen archiviert aber NIEMALS geloescht werden
+4. PROJEKTE ERSTELLEN: Aus Ideen ein Projekt planen
+5. PROJEKT-STATUS: Stand eines Projekts abfragen
 
 === ABLAUF ===
 1. Hoere die Idee des Benutzers
@@ -59,6 +60,29 @@ class IdeasAgent(BaseAgent):
     def __init__(self):
         self._idea_store: Optional[IdeaStore] = None
         self._project_planner: Optional[ProjectPlanner] = None
+        self._ws_manager = None
+
+    def set_ws_manager(self, ws_manager):
+        """Setzt den WebSocket-Manager fuer Ideen-Updates an die GUI."""
+        self._ws_manager = ws_manager
+
+    async def _broadcast_idea_update(self, action: str, idea):
+        """Sendet Idee-Update an alle verbundenen GUI-Clients."""
+        if self._ws_manager:
+            await self._ws_manager.broadcast({
+                "type": "idea_update",
+                "action": action,
+                "idea": idea.to_dict(),
+            })
+
+    async def _broadcast_project_update(self, action: str, project):
+        """Sendet Projekt-Update an alle verbundenen GUI-Clients."""
+        if self._ws_manager:
+            await self._ws_manager.broadcast({
+                "type": "project_update",
+                "action": action,
+                "project": project.to_dict(),
+            })
 
     async def _ensure_stores(self):
         """Stellt sicher dass die Stores initialisiert sind."""
@@ -187,6 +211,21 @@ class IdeasAgent(BaseAgent):
             },
             {
                 "type": "function",
+                "name": "idee_archivieren",
+                "description": "Archiviert eine Idee. Die Idee wird NICHT geloescht, sondern als archiviert markiert.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "idee_id": {
+                            "type": "string",
+                            "description": "ID der Idee die archiviert werden soll"
+                        }
+                    },
+                    "required": ["idee_id"]
+                }
+            },
+            {
+                "type": "function",
                 "name": "zurueck_zur_zentrale",
                 "description": (
                     "Kehrt zurueck zur Zentrale. Nutze dies wenn der Anrufer "
@@ -213,6 +252,8 @@ class IdeasAgent(BaseAgent):
             return await self._ideen_zeigen(arguments)
         elif tool_name == "notiz_hinzufuegen":
             return await self._notiz_hinzufuegen(arguments)
+        elif tool_name == "idee_archivieren":
+            return await self._idee_archivieren(arguments)
         elif tool_name == "projekt_erstellen":
             return await self._projekt_erstellen(arguments)
         elif tool_name == "projekte_zeigen":
@@ -236,6 +277,7 @@ class IdeasAgent(BaseAgent):
             category=kategorie,
         )
         await self._idea_store.create(idea)
+        await self._broadcast_idea_update("created", idea)
 
         return f"Idee erfasst! ID: {idea.id}, Titel: '{titel}', Kategorie: {kategorie}"
 
@@ -273,7 +315,20 @@ class IdeasAgent(BaseAgent):
         if not idea:
             return f"Idee '{idee_id}' nicht gefunden."
 
+        await self._broadcast_idea_update("updated", idea)
         return f"Notiz hinzugefuegt zu '{idea.title}'. Jetzt {len(idea.notes)} Notizen."
+
+    async def _idee_archivieren(self, args: dict) -> str:
+        idee_id = args.get("idee_id", "")
+        if not idee_id:
+            return "Fehler: Keine Idee-ID angegeben."
+
+        idea = await self._idea_store.archive(idee_id)
+        if not idea:
+            return f"Idee '{idee_id}' nicht gefunden."
+
+        await self._broadcast_idea_update("archived", idea)
+        return f"Idee '{idea.title}' wurde archiviert."
 
     async def _projekt_erstellen(self, args: dict) -> str:
         titel = args.get("titel", "")
@@ -291,6 +346,7 @@ class IdeasAgent(BaseAgent):
             ideas=ideen_ids,
         )
         await self._project_planner.create(project)
+        await self._broadcast_project_update("created", project)
 
         return (
             f"Projekt erstellt! ID: {project.id}, Titel: '{titel}'. "

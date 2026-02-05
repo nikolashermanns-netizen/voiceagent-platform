@@ -247,6 +247,80 @@ def setup_routes(app_state):
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
         return {"error": "Task Executor nicht verfuegbar"}
 
+    # ============== Ideas ==============
+
+    @router.get("/ideas")
+    async def get_ideas(category: str = None, status: str = None):
+        """Alle Ideen abrufen, optional nach Kategorie/Status gefiltert."""
+        from agents.ideas_agent.idea_store import IdeaStore
+        db = app_state.get("db")
+        if not db:
+            return {"ideas": []}
+        store = IdeaStore(db)
+        ideas = await store.get_all(category=category, status=status)
+        return {"ideas": [idea.to_dict() for idea in ideas]}
+
+    @router.get("/ideas/{idea_id}")
+    async def get_idea(idea_id: str):
+        """Einzelne Idee abrufen."""
+        from agents.ideas_agent.idea_store import IdeaStore
+        db = app_state.get("db")
+        if not db:
+            raise HTTPException(status_code=500, detail="Datenbank nicht verfuegbar")
+        store = IdeaStore(db)
+        idea = await store.get(idea_id)
+        if not idea:
+            raise HTTPException(status_code=404, detail="Idee nicht gefunden")
+        return idea.to_dict()
+
+    @router.put("/ideas/{idea_id}/archive")
+    async def archive_idea(idea_id: str):
+        """Idee archivieren (nicht loeschen!)."""
+        from agents.ideas_agent.idea_store import IdeaStore
+        db = app_state.get("db")
+        if not db:
+            raise HTTPException(status_code=500, detail="Datenbank nicht verfuegbar")
+        store = IdeaStore(db)
+        idea = await store.archive(idea_id)
+        if not idea:
+            raise HTTPException(status_code=404, detail="Idee nicht gefunden")
+
+        ws_manager = app_state.get("ws_manager")
+        if ws_manager:
+            await ws_manager.broadcast({
+                "type": "idea_update",
+                "action": "archived",
+                "idea": idea.to_dict(),
+            })
+
+        return idea.to_dict()
+
+    # ============== Projects ==============
+
+    @router.get("/projects")
+    async def get_projects(status: str = None):
+        """Alle Projekte abrufen."""
+        from agents.ideas_agent.project_planner import ProjectPlanner
+        db = app_state.get("db")
+        if not db:
+            return {"projects": []}
+        planner = ProjectPlanner(db)
+        projects = await planner.get_all(status=status)
+        return {"projects": [p.to_dict() for p in projects]}
+
+    @router.get("/projects/{project_id}")
+    async def get_project(project_id: str):
+        """Einzelnes Projekt abrufen."""
+        from agents.ideas_agent.project_planner import ProjectPlanner
+        db = app_state.get("db")
+        if not db:
+            raise HTTPException(status_code=500, detail="Datenbank nicht verfuegbar")
+        planner = ProjectPlanner(db)
+        project = await planner.get(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
+        return project.to_dict()
+
     # ============== Blacklist ==============
 
     @router.get("/blacklist")

@@ -23,6 +23,8 @@
         availableAgents: [],
         aiMuted: false,
         firewallEnabled: true,
+        ideas: [],
+        projects: [],
         codingProgress: {
             projectId: null,
             status: 'idle',
@@ -63,6 +65,7 @@
         DOM.codingFiles    = document.getElementById('coding-files');
         DOM.codingTools    = document.getElementById('coding-tools');
         DOM.ideasList      = document.getElementById('ideas-list');
+        DOM.btnRefreshIdeas = document.getElementById('btn-refresh-ideas');
         DOM.blacklistList  = document.getElementById('blacklist-list');
         DOM.agentsList     = document.getElementById('agents-list');
         DOM.firewallStatus = document.getElementById('firewall-status');
@@ -207,6 +210,7 @@
 
                 fetchAgentsInfo();
                 fetchTasks();
+                fetchIdeas();
             },
 
             call_incoming: function (data) {
@@ -279,6 +283,45 @@
             firewall_status: function (data) {
                 State.firewallEnabled = data.enabled;
                 UI.updateFirewall(data.enabled);
+            },
+
+            idea_update: function (data) {
+                var action = data.action;
+                var idea = data.idea;
+
+                if (action === 'created') {
+                    State.ideas.unshift(idea);
+                    addDebug('[IDEE] Neu: ' + idea.title);
+                } else if (action === 'updated' || action === 'archived') {
+                    for (var i = 0; i < State.ideas.length; i++) {
+                        if (State.ideas[i].id === idea.id) {
+                            State.ideas[i] = idea;
+                            break;
+                        }
+                    }
+                    addDebug('[IDEE] ' + action + ': ' + idea.title);
+                }
+
+                UI.updateIdeasPanel(State.ideas, State.projects);
+            },
+
+            project_update: function (data) {
+                var action = data.action;
+                var project = data.project;
+
+                if (action === 'created') {
+                    State.projects.unshift(project);
+                    addDebug('[PROJEKT] Neu: ' + project.title);
+                } else {
+                    for (var i = 0; i < State.projects.length; i++) {
+                        if (State.projects[i].id === project.id) {
+                            State.projects[i] = project;
+                            break;
+                        }
+                    }
+                }
+
+                UI.updateIdeasPanel(State.ideas, State.projects);
             },
 
             blacklist_updated: function () {
@@ -461,6 +504,150 @@
             DOM.firewallStatus.style.color = enabled ? '' : 'var(--ctp-red)';
         },
 
+        updateIdeasPanel: function (ideas, projects) {
+            DOM.ideasList.innerHTML = '';
+
+            if ((!ideas || ideas.length === 0) && (!projects || projects.length === 0)) {
+                DOM.ideasList.innerHTML = '<div class="empty-state">Keine Ideen</div>';
+                return;
+            }
+
+            // --- Projects Section ---
+            if (projects && projects.length > 0) {
+                var projHeader = document.createElement('h3');
+                projHeader.className = 'section-title';
+                projHeader.textContent = 'Projekte (' + projects.length + ')';
+                DOM.ideasList.appendChild(projHeader);
+
+                projects.forEach(function (project) {
+                    var div = document.createElement('div');
+                    div.className = 'project-card';
+                    var linkedCount = (project.ideas || []).length;
+                    div.innerHTML =
+                        '<div class="project-card__header">' +
+                            '<span class="project-card__title">' + esc(project.title) + '</span>' +
+                            '<span class="project-card__status project-card__status--' + project.status + '">' + esc(project.status) + '</span>' +
+                        '</div>' +
+                        '<div class="project-card__desc">' + esc(project.description || '') + '</div>' +
+                        '<div class="project-card__meta">' + linkedCount + ' verknuepfte Ideen</div>';
+                    DOM.ideasList.appendChild(div);
+                });
+            }
+
+            // --- Ideas grouped by category ---
+            var active = [];
+            var archived = [];
+            (ideas || []).forEach(function (idea) {
+                if (idea.status === 'archived') {
+                    archived.push(idea);
+                } else {
+                    active.push(idea);
+                }
+            });
+
+            var categories = {};
+            active.forEach(function (idea) {
+                var cat = idea.category || 'sonstiges';
+                if (!categories[cat]) categories[cat] = [];
+                categories[cat].push(idea);
+            });
+
+            var catLabels = {
+                software: 'Software',
+                business: 'Business',
+                automation: 'Automation',
+                kreativ: 'Kreativ',
+                sonstiges: 'Sonstiges'
+            };
+            var catOrder = ['software', 'business', 'automation', 'kreativ', 'sonstiges'];
+
+            if (active.length > 0) {
+                var ideasHeader = document.createElement('h3');
+                ideasHeader.className = 'section-title';
+                ideasHeader.textContent = 'Ideen (' + active.length + ')';
+                DOM.ideasList.appendChild(ideasHeader);
+            }
+
+            catOrder.forEach(function (cat) {
+                if (!categories[cat]) return;
+
+                var catDiv = document.createElement('div');
+                catDiv.className = 'idea-category';
+
+                var catHeader = document.createElement('div');
+                catHeader.className = 'idea-category__header';
+                catHeader.innerHTML =
+                    '<span class="idea-category__label idea-category__label--' + cat + '">' +
+                    esc(catLabels[cat] || cat) + '</span>' +
+                    '<span class="idea-category__count">' + categories[cat].length + '</span>';
+                catDiv.appendChild(catHeader);
+
+                categories[cat].forEach(function (idea) {
+                    var card = document.createElement('div');
+                    card.className = 'idea-card';
+
+                    var notesCount = (idea.notes || []).length;
+                    var dateStr = idea.created_at ? new Date(idea.created_at).toLocaleDateString('de-DE') : '';
+
+                    card.innerHTML =
+                        '<div class="idea-card__header">' +
+                            '<span class="idea-card__title">' + esc(idea.title) + '</span>' +
+                            '<span class="idea-card__status idea-card__status--' + idea.status + '">' + esc(idea.status) + '</span>' +
+                        '</div>' +
+                        '<div class="idea-card__desc">' + esc(idea.description || '') + '</div>' +
+                        (notesCount > 0 ? '<div class="idea-card__notes">' + notesCount + ' Notizen</div>' : '') +
+                        '<div class="idea-card__footer">' +
+                            '<span class="idea-card__date">' + dateStr + '</span>' +
+                            '<button class="btn btn--small btn--ghost idea-card__archive" data-idea-id="' + idea.id + '">Archivieren</button>' +
+                        '</div>';
+
+                    catDiv.appendChild(card);
+                });
+
+                DOM.ideasList.appendChild(catDiv);
+            });
+
+            // --- Archived section (collapsed) ---
+            if (archived.length > 0) {
+                var archiveSection = document.createElement('div');
+                archiveSection.className = 'idea-archive-section';
+                archiveSection.innerHTML =
+                    '<button class="idea-archive-toggle btn btn--small btn--ghost">' +
+                    'Archiviert (' + archived.length + ')</button>' +
+                    '<div class="idea-archive-list" style="display:none;"></div>';
+
+                var toggleBtn = archiveSection.querySelector('.idea-archive-toggle');
+                var archiveList = archiveSection.querySelector('.idea-archive-list');
+
+                toggleBtn.addEventListener('click', function () {
+                    archiveList.style.display = archiveList.style.display === 'none' ? 'block' : 'none';
+                });
+
+                archived.forEach(function (idea) {
+                    var card = document.createElement('div');
+                    card.className = 'idea-card idea-card--archived';
+                    var dateStr = idea.created_at ? new Date(idea.created_at).toLocaleDateString('de-DE') : '';
+                    card.innerHTML =
+                        '<div class="idea-card__header">' +
+                            '<span class="idea-card__title">' + esc(idea.title) + '</span>' +
+                            '<span class="idea-card__category">' + esc(catLabels[idea.category] || idea.category || '') + '</span>' +
+                        '</div>' +
+                        '<div class="idea-card__desc">' + esc(idea.description || '') + '</div>' +
+                        '<div class="idea-card__date">' + dateStr + '</div>';
+                    archiveList.appendChild(card);
+                });
+
+                DOM.ideasList.appendChild(archiveSection);
+            }
+
+            // Bind archive buttons
+            DOM.ideasList.querySelectorAll('[data-idea-id]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    archiveIdea(this.getAttribute('data-idea-id'));
+                });
+            });
+        },
+
         updateBlacklist: function (entries) {
             DOM.blacklistList.innerHTML = '';
             if (!entries || entries.length === 0) {
@@ -519,6 +706,33 @@
         fetch('/tasks/' + taskId + '/cancel', { method: 'POST' })
             .then(function () { fetchTasks(); })
             .catch(function (e) { addDebug('[API] Cancel: ' + e.message); });
+    }
+
+    function fetchIdeas() {
+        fetch('/ideas')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                State.ideas = data.ideas || [];
+                fetchProjects();
+            })
+            .catch(function (e) { addDebug('[API] Ideas: ' + e.message); });
+    }
+
+    function fetchProjects() {
+        fetch('/projects')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                State.projects = data.projects || [];
+                UI.updateIdeasPanel(State.ideas, State.projects);
+            })
+            .catch(function (e) { addDebug('[API] Projects: ' + e.message); });
+    }
+
+    function archiveIdea(ideaId) {
+        fetch('/ideas/' + ideaId + '/archive', { method: 'PUT' })
+            .then(function (r) { return r.json(); })
+            .then(function () { fetchIdeas(); })
+            .catch(function (e) { addDebug('[API] Archive: ' + e.message); });
     }
 
     function fetchBlacklist() {
@@ -610,6 +824,10 @@
         });
 
         DOM.btnFirewallToggle.addEventListener('click', toggleFirewall);
+
+        if (DOM.btnRefreshIdeas) {
+            DOM.btnRefreshIdeas.addEventListener('click', fetchIdeas);
+        }
     }
 
     // ============================================
