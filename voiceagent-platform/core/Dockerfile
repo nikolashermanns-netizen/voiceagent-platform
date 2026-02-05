@@ -35,6 +35,8 @@ RUN wget -q https://github.com/pjsip/pjproject/archive/refs/tags/2.14.1.tar.gz \
         --disable-video \
         CFLAGS="-fPIC -O2" \
     && make dep && make \
+    && make install \
+    && ldconfig \
     && pip install setuptools \
     && cd pjsip-apps/src/swig/python \
     && make \
