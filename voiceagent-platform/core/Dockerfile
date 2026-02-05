@@ -51,6 +51,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # App Code
 COPY core/ /app/core/
 COPY agents/ /app/agents/
+COPY web/ /app/web/
 
 # Data Verzeichnisse
 RUN mkdir -p /app/data /app/workspace /app/config

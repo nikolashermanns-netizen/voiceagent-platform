@@ -1,4 +1,4 @@
-# Findings & Lessons Learned - Bestell Bot Voice POC
+# Findings & Lessons Learned - VoiceAgent Platform POC
 
 ## Audio-Probleme
 
@@ -544,7 +544,7 @@ Telefon → Sipgate → Linux Server (PJSIP + FastAPI)
 **Lösung:** `network_mode: host` in docker-compose.yml:
 ```yaml
 services:
-  bestell-bot:
+  voiceagent-core:
     network_mode: host  # WICHTIG für SIP!
     privileged: true
     cap_add:
@@ -863,21 +863,7 @@ iptables -I INPUT -p tcp -s 10.200.200.0/24 --dport 8085 -j ACCEPT
 iptables -D INPUT -p udp --dport 4000:4100 -j ACCEPT  # Offene Regel löschen
 ```
 
-### 48. Katalog-Daten Deployment
-
-**Problem:** `docker-compose.yml` hatte Volume-Mount auf `../Bestell Bot Voice/server/system_katalog` - existiert nicht auf dem Server.
-
-**Lösung:** Katalog-Daten liegen im `data/system_katalog/` Verzeichnis (Teil des data/-Mounts):
-- Lokal: Manuell aus Bestell Bot Voice kopieren
-- Server: Per `scp` hochladen
-- Docker: Über `./data:/app/data` Mount verfügbar unter `/app/data/system_katalog`
-
-```bash
-# Katalog auf Server kopieren:
-scp -r "Bestell Bot Voice/server/system_katalog/"* bot:/opt/voiceagent-platform/voiceagent-platform/data/system_katalog/
-```
-
-### 49. Audio Queue Warning Threshold
+### 48. Audio Queue Warning Threshold
 
 **Problem:** Queue-Warnung bei 50 Frames war viel zu früh (5% von maxlen=1000). Logs wurden mit Warnungen geflutet.
 
@@ -1018,7 +1004,7 @@ services:
 
 - [ ] `.env` mit echten Credentials auf Server
 - [ ] `SIP_PUBLIC_IP` auf Server Public IP gesetzt
-- [ ] Katalog-Daten in `data/system_katalog/` vorhanden
+- [ ] Daten-Verzeichnis `data/` vorhanden
 - [ ] Firewall: SIP 5060 nur Sipgate, RTP 4000-4100 nur Sipgate Media
 - [ ] Firewall: API 8085 nur WireGuard
 - [ ] `response_in_progress` Flag wird korrekt getrackt

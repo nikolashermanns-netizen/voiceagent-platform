@@ -6,10 +6,13 @@ Verbindet alle Komponenten: SIP, AI, Agents, Tasks, WebSocket.
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from core.app.config import settings
 from core.app.db.database import get_database
@@ -174,6 +177,7 @@ async def on_transcript(role: str, text: str, is_final: bool):
 async def on_function_call(call_id: str, name: str, arguments: dict) -> str:
     """Function Call von AI -> Agent-Manager fuehrt Tool aus."""
     agent_manager: AgentManager = app_state["agent_manager"]
+    voice_client: VoiceClient = app_state["voice_client"]
     ws_manager: ConnectionManager = app_state["ws_manager"]
 
     # An GUI senden
@@ -185,6 +189,23 @@ async def on_function_call(call_id: str, name: str, arguments: dict) -> str:
 
     # Agent fuehrt Tool aus
     result = await agent_manager.execute_tool(name, arguments)
+
+    # Pruefen ob das Ergebnis ein Agent-Switch-Signal ist
+    if result and result.startswith("__SWITCH__:"):
+        target_agent = result.split(":", 1)[1]
+        success = await agent_manager.switch_agent(target_agent)
+        if success:
+            # OpenAI Session mit neuen Tools/Instructions aktualisieren
+            if voice_client and voice_client.is_connected:
+                await voice_client.update_session(
+                    tools=agent_manager.get_tools(),
+                    instructions=agent_manager.get_instructions()
+                )
+            display = agent_manager.active_agent.display_name if agent_manager.active_agent else target_agent
+            result = f"Du bist jetzt verbunden mit: {display}"
+            logger.info(f"Agent-Switch via Tool: -> {target_agent}")
+        else:
+            result = f"Agent-Wechsel zu '{target_agent}' fehlgeschlagen."
 
     # Ergebnis an GUI
     await ws_manager.broadcast({
@@ -254,7 +275,7 @@ async def lifespan(app: FastAPI):
     agent_registry.discover_agents(settings.AGENTS_DIR)
     logger.info(f"Agenten entdeckt: {agent_registry.count}")
 
-    agent_manager = AgentManager(agent_registry, default_agent="bestell_agent")
+    agent_manager = AgentManager(agent_registry, default_agent="main_agent")
     agent_manager.on_agent_changed = on_agent_changed
 
     agent_router = AgentRouter(agent_registry)
@@ -280,6 +301,12 @@ async def lifespan(app: FastAPI):
         "voice_client": voice_client,
         "ws_manager": ws_manager,
     })
+
+    # MainAgent: Registry injizieren (fuer dynamische Agent-Liste)
+    main_agent = agent_registry.get_agent("main_agent")
+    if main_agent and hasattr(main_agent, "set_registry"):
+        main_agent.set_registry(agent_registry)
+        logger.info("AgentRegistry in Main-Agent injiziert")
 
     # WebSocket-Manager in Code-Agent injizieren (fuer Coding-Progress)
     code_agent = agent_registry.get_agent("code_agent")
@@ -338,6 +365,22 @@ api_router = setup_routes(app_state)
 ws_router = setup_ws_routes(app_state)
 app.include_router(api_router)
 app.include_router(ws_router)
+
+# ============== Web Dashboard ==============
+# Statische Dateien (CSS, JS) und index.html servieren
+
+_web_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "web")
+# Im Docker: /app/web
+if not os.path.isdir(_web_dir):
+    _web_dir = "/app/web"
+
+if os.path.isdir(_web_dir):
+    @app.get("/", include_in_schema=False)
+    async def serve_dashboard():
+        return FileResponse(os.path.join(_web_dir, "index.html"))
+
+    app.mount("/static", StaticFiles(directory=_web_dir), name="static")
+    logger.info(f"Web Dashboard aktiv: {_web_dir}")
 
 
 # ============== Main ==============

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceAgent Platform</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header__brand">
+            <h1 class="header__title">VoiceAgent</h1>
+        </div>
+
+        <div class="header__status-group">
+            <div class="status-badge" id="sip-status">
+                <span class="status-badge__dot"></span>
+                <span class="status-badge__label">SIP: Offline</span>
+            </div>
+            <div class="status-badge" id="call-status">
+                <span class="status-badge__dot"></span>
+                <span class="status-badge__label">Kein Anruf</span>
+            </div>
+        </div>
+
+        <div class="header__controls">
+            <div class="header__agent-select">
+                <label for="agent-select">Agent:</label>
+                <select id="agent-select" class="select"></select>
+            </div>
+            <button id="btn-mute" class="btn btn--secondary" disabled>Stumm</button>
+            <button id="btn-hangup" class="btn btn--danger" disabled>Auflegen</button>
+        </div>
+
+        <div id="ws-status">
+            <span class="status-badge__dot status-badge__dot--offline"></span>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <main class="main">
+        <!-- Transcript -->
+        <section class="panel panel--transcript">
+            <div class="panel__header">
+                <h2 class="panel__title">Live-Transkript</h2>
+                <button class="btn btn--small btn--ghost" id="btn-clear-transcript">Leeren</button>
+            </div>
+            <div class="transcript" id="transcript"></div>
+        </section>
+
+        <!-- Tabs -->
+        <section class="panel panel--tabs">
+            <nav class="tabs__nav" role="tablist">
+                <button class="tabs__tab tabs__tab--active" role="tab" data-tab="bestellung" aria-selected="true">Bestellung</button>
+                <button class="tabs__tab" role="tab" data-tab="tasks" aria-selected="false">Tasks</button>
+                <button class="tabs__tab" role="tab" data-tab="coding" aria-selected="false">Coding</button>
+                <button class="tabs__tab" role="tab" data-tab="ideen" aria-selected="false">Ideen</button>
+                <button class="tabs__tab" role="tab" data-tab="agenten" aria-selected="false">Agenten</button>
+                <button class="tabs__tab" role="tab" data-tab="debug" aria-selected="false">Debug</button>
+            </nav>
+
+            <!-- Bestellung -->
+            <div class="tabs__content tabs__content--active" id="tab-bestellung" role="tabpanel" data-tab="bestellung">
+                <div class="order-list" id="order-list">
+                    <div class="empty-state">Keine Bestellung aktiv</div>
+                </div>
+                <div class="order-summary" id="order-summary">Bestellung: 0 Positionen</div>
+            </div>
+
+            <!-- Tasks -->
+            <div class="tabs__content" id="tab-tasks" role="tabpanel" data-tab="tasks">
+                <div id="task-list">
+                    <div class="empty-state">Keine Tasks</div>
+                </div>
+            </div>
+
+            <!-- Coding -->
+            <div class="tabs__content" id="tab-coding" role="tabpanel" data-tab="coding">
+                <div class="coding-panel">
+                    <div class="coding-panel__status" id="coding-status">
+                        <span class="coding-panel__indicator"></span>
+                        <span>Bereit</span>
+                    </div>
+                    <div class="coding-panel__project" id="coding-project"></div>
+                    <div class="coding-panel__progress" id="coding-progress"></div>
+                    <div class="coding-panel__section">
+                        <h3>Geaenderte Dateien</h3>
+                        <ul class="coding-panel__files" id="coding-files"></ul>
+                    </div>
+                    <div class="coding-panel__section">
+                        <h3>Verwendete Tools</h3>
+                        <div class="coding-panel__tools" id="coding-tools"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ideen -->
+            <div class="tabs__content" id="tab-ideen" role="tabpanel" data-tab="ideen">
+                <div id="ideas-list">
+                    <div class="empty-state">Keine Ideen</div>
+                </div>
+            </div>
+
+            <!-- Agenten -->
+            <div class="tabs__content" id="tab-agenten" role="tabpanel" data-tab="agenten">
+                <h3 class="section-title">Verfuegbare Agenten</h3>
+                <div id="agents-list"></div>
+                <div class="firewall-section">
+                    <h3 class="section-title">SIP Firewall</h3>
+                    <div class="firewall-controls">
+                        <span id="firewall-status">Status: Unbekannt</span>
+                        <button class="btn btn--small btn--secondary" id="btn-firewall-toggle">Toggle</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Debug -->
+            <div class="tabs__content" id="tab-debug" role="tabpanel" data-tab="debug">
+                <div class="panel__header" style="padding: 0 0 var(--space-md) 0; border: none;">
+                    <h3 class="section-title" style="margin: 0;">Debug Log</h3>
+                    <button class="btn btn--small btn--ghost" id="btn-clear-debug">Leeren</button>
+                </div>
+                <div class="debug-log" id="debug-log"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Statusbar -->
+    <footer class="statusbar">
+        <span id="statusbar-text">Verbinde...</span>
+        <span id="statusbar-connections"></span>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

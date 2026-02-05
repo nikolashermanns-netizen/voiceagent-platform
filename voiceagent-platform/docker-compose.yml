@@ -14,9 +14,6 @@ services:
       - ./data:/app/data
       - ./workspace:/app/workspace
       - ./config:/app/config
-      # Katalog-Daten liegen in ./data/system_katalog
-      # Lokal: kopiert aus ../Bestell Bot Voice/server/system_katalog
-      # Server: liegt direkt im data/ Ordner
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_PATH=/app/data/voiceagent.db

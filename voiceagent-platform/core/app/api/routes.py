@@ -80,8 +80,8 @@ def setup_routes(app_state):
         app_state: Dict mit sip_client, voice_client, agent_manager, etc.
     """
 
-    @router.get("/")
-    async def root():
+    @router.get("/health")
+    async def health():
         """Health check."""
         sip = app_state.get("sip_client")
         return {

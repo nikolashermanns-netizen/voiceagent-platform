@@ -28,6 +28,31 @@ warn() { echo -e "${YELLOW}[Server]${NC} $1"; }
 error(){ echo -e "${RED}[Server]${NC} $1"; exit 1; }
 info() { echo -e "${CYAN}[Server]${NC} $1"; }
 
+# Lokale Aenderungen pruefen, committen und pushen
+check_local_changes() {
+    cd "$(dirname "$0")"
+    cd "$(git -C . rev-parse --show-toplevel)"
+
+    if [ -n "$(git status --porcelain)" ]; then
+        warn "Lokale Aenderungen gefunden:"
+        echo ""
+        git status --short
+        echo ""
+        read -p "$(echo -e "${YELLOW}[Lokal]${NC} Aenderungen committen und pushen? (j/n): ")" answer
+        if [ "$answer" = "j" ] || [ "$answer" = "J" ] || [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+            log "Committe und pushe..."
+            git add -A
+            git commit -m "auto"
+            git push
+            log "Push erfolgreich."
+        else
+            warn "Uebersprungen. Aenderungen bleiben lokal."
+        fi
+    else
+        log "Keine lokalen Aenderungen."
+    fi
+}
+
 # SSH-Verbindung testen
 check_ssh() {
     log "Teste SSH-Verbindung zu '$SSH_HOST'..."
@@ -38,6 +63,7 @@ check_ssh() {
 
 # Komplett-Setup: Docker, Git, Env, Build, Start
 setup() {
+    check_local_changes
     check_ssh
 
     log "Starte Server-Setup auf '$SSH_HOST'..."
@@ -209,6 +235,7 @@ REMOTE_SCRIPT
 
 # Nur Update: Git pull + rebuild + restart
 update() {
+    check_local_changes
     check_ssh
     log "Update auf '$SSH_HOST'..."
 

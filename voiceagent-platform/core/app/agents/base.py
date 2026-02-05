@@ -30,13 +30,13 @@ class BaseAgent(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Eindeutiger Agent-Name (z.B. 'bestell_agent')."""
+        """Eindeutiger Agent-Name (z.B. 'code_agent')."""
         ...
 
     @property
     @abstractmethod
     def display_name(self) -> str:
-        """Anzeigename (z.B. 'Bestell-Service')."""
+        """Anzeigename (z.B. 'Programmier-Assistent')."""
         ...
 
     @property

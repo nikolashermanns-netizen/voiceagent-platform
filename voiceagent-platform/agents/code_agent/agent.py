@@ -41,7 +41,12 @@ CODE_AGENT_INSTRUCTIONS = """Du bist ein Programmier-Assistent der per Telefon k
 - Fasse zusammen was gemacht wurde, nicht jede einzelne Zeile Code
 - Bei Fehlern: Erklaere was schief ging und frage ob du es fixen sollst
 - Frage bei Unklarheiten nach
-- Nutze 'projekt_status' wenn der User nach dem Stand fragt"""
+- Nutze 'projekt_status' wenn der User nach dem Stand fragt
+
+=== ZURUECK ZUR ZENTRALE ===
+Wenn der Anrufer "exit", "zurueck", "menue" oder "hauptmenue" sagt:
+- Sage kurz: "Alles klar, ich bringe dich zurueck zur Zentrale."
+- Nutze dann SOFORT das Tool 'zurueck_zur_zentrale'"""
 
 
 class CodeAgent(BaseAgent):
@@ -174,6 +179,19 @@ class CodeAgent(BaseAgent):
                     "required": ["projekt"],
                 },
             },
+            {
+                "type": "function",
+                "name": "zurueck_zur_zentrale",
+                "description": (
+                    "Kehrt zurueck zur Zentrale. Nutze dies wenn der Anrufer "
+                    "'exit', 'zurueck', 'menue' oder 'hauptmenue' sagt."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
         ]
 
     def get_instructions(self) -> str:
@@ -190,6 +208,8 @@ class CodeAgent(BaseAgent):
             return await self._projekte_auflisten()
         elif tool_name == "session_zuruecksetzen":
             return await self._session_zuruecksetzen(arguments)
+        elif tool_name == "zurueck_zur_zentrale":
+            return "__SWITCH__:main_agent"
         else:
             return f"Unbekannte Funktion: {tool_name}"
 

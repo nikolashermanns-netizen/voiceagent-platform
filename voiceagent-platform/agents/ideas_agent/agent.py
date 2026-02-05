@@ -45,7 +45,12 @@ Ordne Ideen automatisch einer Kategorie zu:
 - Kurze Antworten (fuer Sprachausgabe!)
 - Wiederhole die Idee kurz zur Bestaetigung
 - Frage bei Unklarheiten nach
-- Sei positiv und ermutigend"""
+- Sei positiv und ermutigend
+
+=== ZURUECK ZUR ZENTRALE ===
+Wenn der Anrufer "exit", "zurueck", "menue" oder "hauptmenue" sagt:
+- Sage kurz: "Alles klar, ich bringe dich zurueck zur Zentrale."
+- Nutze dann SOFORT das Tool 'zurueck_zur_zentrale'"""
 
 
 class IdeasAgent(BaseAgent):
@@ -180,6 +185,19 @@ class IdeasAgent(BaseAgent):
                     "required": []
                 }
             },
+            {
+                "type": "function",
+                "name": "zurueck_zur_zentrale",
+                "description": (
+                    "Kehrt zurueck zur Zentrale. Nutze dies wenn der Anrufer "
+                    "'exit', 'zurueck', 'menue' oder 'hauptmenue' sagt."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
         ]
 
     def get_instructions(self) -> str:
@@ -199,6 +217,8 @@ class IdeasAgent(BaseAgent):
             return await self._projekt_erstellen(arguments)
         elif tool_name == "projekte_zeigen":
             return await self._projekte_zeigen()
+        elif tool_name == "zurueck_zur_zentrale":
+            return "__SWITCH__:main_agent"
         else:
             return f"Unbekannte Funktion: {tool_name}"
 
