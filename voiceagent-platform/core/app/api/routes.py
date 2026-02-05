@@ -1,0 +1,287 @@
+"""
+REST API Routes fuer VoiceAgent Platform.
+
+Bietet Endpoints fuer Status, Konfiguration, Call-Control,
+Tasks, Agents und Firewall.
+"""
+
+import ipaddress
+import logging
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Header, HTTPException
+
+from core.app.config import settings
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+# ============== IP Whitelist fuer SIP ==============
+ALLOWED_SIP_NETWORKS = [
+    ipaddress.ip_network("217.10.0.0/16"),       # Sipgate Hauptnetz
+    ipaddress.ip_network("212.9.32.0/19"),        # Sipgate Infrastruktur
+    ipaddress.ip_network("95.174.128.0/20"),      # Sipgate zusaetzlich
+    ipaddress.ip_network("2001:ab7::/32"),        # Sipgate IPv6
+]
+
+PRIVATE_IP_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+]
+
+# Firewall Status
+sip_firewall_enabled = True
+
+
+def is_ip_allowed(ip_str: str, caller_uri: str = None) -> bool:
+    """Prueft ob eine IP-Adresse von einem erlaubten SIP-Provider stammt."""
+    global sip_firewall_enabled
+
+    if not sip_firewall_enabled:
+        return True
+
+    if not ip_str:
+        return False
+
+    try:
+        ip = ipaddress.ip_address(ip_str)
+
+        for network in ALLOWED_SIP_NETWORKS:
+            if ip in network:
+                return True
+
+        # Private IP: Erlauben wenn Caller-URI passend
+        if any(ip in net for net in PRIVATE_IP_NETWORKS):
+            if caller_uri and (
+                settings.SIP_PUBLIC_IP in caller_uri
+                or "sipgate" in caller_uri.lower()
+            ):
+                return True
+
+        return False
+    except ValueError:
+        return False
+
+
+def verify_api_key(x_api_key: Optional[str] = Header(None)):
+    """API-Key Authentifizierung (optional, wenn API_KEY gesetzt)."""
+    if settings.API_KEY and settings.API_KEY != "":
+        if x_api_key != settings.API_KEY:
+            raise HTTPException(status_code=401, detail="Ungueltiger API-Key")
+
+
+def setup_routes(app_state):
+    """
+    Erstellt die API-Routes mit Zugriff auf den App-State.
+
+    Args:
+        app_state: Dict mit sip_client, voice_client, agent_manager, etc.
+    """
+
+    @router.get("/")
+    async def root():
+        """Health check."""
+        sip = app_state.get("sip_client")
+        return {
+            "status": "running",
+            "sip_registered": sip.is_registered if sip else False,
+            "call_active": sip.is_in_call if sip else False,
+        }
+
+    @router.get("/status")
+    async def get_status():
+        """Detaillierter Status."""
+        sip = app_state.get("sip_client")
+        voice = app_state.get("voice_client")
+        agent_mgr = app_state.get("agent_manager")
+        task_exec = app_state.get("task_executor")
+
+        return {
+            "sip": {
+                "registered": sip.is_registered if sip else False,
+                "server": settings.SIP_SERVER,
+                "user": settings.SIP_USER,
+                "in_call": sip.is_in_call if sip else False,
+                "caller_id": sip.current_caller_id if sip else None,
+            },
+            "ai": {
+                "connected": voice.is_connected if voice else False,
+                "model": voice.model if voice else "",
+            },
+            "agent": {
+                "active": agent_mgr.active_agent_name if agent_mgr else None,
+                "available": agent_mgr.registry.get_agent_names() if agent_mgr else [],
+            },
+            "tasks": {
+                "active": task_exec.active_count if task_exec else 0,
+            },
+            "firewall": {
+                "enabled": sip_firewall_enabled,
+            },
+        }
+
+    # ============== Call Control ==============
+
+    @router.post("/call/accept")
+    async def accept_call():
+        """Anruf annehmen."""
+        sip = app_state.get("sip_client")
+        if sip and sip.has_incoming_call:
+            await sip.accept_call()
+            return {"status": "accepted"}
+        return {"status": "no_incoming_call"}
+
+    @router.post("/call/hangup")
+    async def hangup_call():
+        """Anruf beenden."""
+        sip = app_state.get("sip_client")
+        if sip and sip.is_in_call:
+            await sip.hangup()
+            return {"status": "hungup"}
+        return {"status": "no_active_call"}
+
+    @router.post("/ai/mute")
+    async def mute_ai():
+        """AI stumm schalten."""
+        voice = app_state.get("voice_client")
+        if voice:
+            voice.muted = True
+            return {"status": "muted"}
+        return {"status": "error"}
+
+    @router.post("/ai/unmute")
+    async def unmute_ai():
+        """AI Stummschaltung aufheben."""
+        voice = app_state.get("voice_client")
+        if voice:
+            voice.muted = False
+            return {"status": "unmuted"}
+        return {"status": "error"}
+
+    # ============== Model ==============
+
+    @router.get("/model")
+    async def get_model():
+        """Aktuelles AI-Modell abrufen."""
+        voice = app_state.get("voice_client")
+        return {
+            "model": voice.model if voice else "",
+            "available_models": AVAILABLE_MODELS,
+        }
+
+    @router.post("/model")
+    async def set_model(data: dict):
+        """AI-Modell setzen."""
+        voice = app_state.get("voice_client")
+        if voice:
+            model = data.get("model", "")
+            if voice.set_model(model):
+                return {"status": "ok", "model": model}
+            return {"status": "error", "message": "Unbekanntes Modell"}
+        return {"status": "error"}
+
+    # ============== Agents ==============
+
+    @router.get("/agents")
+    async def get_agents():
+        """Alle verfuegbaren Agenten abrufen."""
+        agent_mgr = app_state.get("agent_manager")
+        if agent_mgr:
+            return {
+                "agents": agent_mgr.registry.get_agent_info(),
+                "active": agent_mgr.active_agent_name,
+            }
+        return {"agents": [], "active": None}
+
+    @router.post("/agents/switch")
+    async def switch_agent(data: dict):
+        """Aktiven Agent wechseln."""
+        agent_mgr = app_state.get("agent_manager")
+        if agent_mgr:
+            agent_name = data.get("agent_name", "")
+            success = await agent_mgr.switch_agent(agent_name)
+            if success:
+                # Voice Client Session aktualisieren
+                voice = app_state.get("voice_client")
+                if voice and voice.is_connected:
+                    await voice.update_session(
+                        tools=agent_mgr.get_tools(),
+                        instructions=agent_mgr.get_instructions()
+                    )
+                return {"status": "ok", "agent": agent_name}
+            return {"status": "error", "message": f"Agent '{agent_name}' nicht gefunden"}
+        return {"status": "error"}
+
+    # ============== Tasks ==============
+
+    @router.get("/tasks")
+    async def get_tasks():
+        """Alle Tasks abrufen."""
+        task_store = app_state.get("task_store")
+        if task_store:
+            tasks = await task_store.get_all()
+            return {"tasks": [t.model_dump() for t in tasks]}
+        return {"tasks": []}
+
+    @router.get("/tasks/{task_id}")
+    async def get_task(task_id: str):
+        """Einzelnen Task abrufen."""
+        task_store = app_state.get("task_store")
+        if task_store:
+            task = await task_store.get(task_id)
+            if task:
+                return task.model_dump()
+            raise HTTPException(status_code=404, detail="Task nicht gefunden")
+        return {"error": "Task Store nicht verfuegbar"}
+
+    @router.post("/tasks/{task_id}/cancel")
+    async def cancel_task(task_id: str):
+        """Task abbrechen."""
+        task_exec = app_state.get("task_executor")
+        if task_exec:
+            task = await task_exec.cancel(task_id)
+            if task:
+                return {"status": "cancelled", "task": task.model_dump()}
+            raise HTTPException(status_code=404, detail="Task nicht gefunden")
+        return {"error": "Task Executor nicht verfuegbar"}
+
+    # ============== Firewall ==============
+
+    @router.get("/firewall")
+    async def get_firewall_status():
+        """SIP Firewall Status."""
+        return {
+            "enabled": sip_firewall_enabled,
+            "allowed_networks": [str(n) for n in ALLOWED_SIP_NETWORKS],
+        }
+
+    @router.post("/firewall")
+    async def set_firewall_status(data: dict):
+        """SIP Firewall aktivieren/deaktivieren."""
+        global sip_firewall_enabled
+
+        enabled = data.get("enabled")
+        if enabled is None:
+            return {"status": "error", "message": "Parameter 'enabled' fehlt"}
+
+        sip_firewall_enabled = bool(enabled)
+        logger.info(
+            f"SIP Firewall {'aktiviert' if sip_firewall_enabled else 'DEAKTIVIERT'}"
+        )
+
+        ws_manager = app_state.get("ws_manager")
+        if ws_manager:
+            await ws_manager.broadcast({
+                "type": "firewall_status",
+                "enabled": sip_firewall_enabled,
+            })
+
+        return {"status": "ok", "enabled": sip_firewall_enabled}
+
+    return router
+
+
+# Model-Import fuer direkten Zugriff
+from core.app.ai.voice_client import AVAILABLE_MODELS

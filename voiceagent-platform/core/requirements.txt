@@ -1,0 +1,28 @@
+# VoiceAgent Platform - Python Dependencies
+
+# Web Framework
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+
+# Async
+aiohttp==3.11.0
+aiosqlite==0.20.0
+
+# Audio
+numpy==2.1.0
+scipy==1.14.0
+
+# Config
+pydantic-settings==2.6.0
+
+# OpenAI
+openai==1.58.0
+
+# PJSIP (pre-compiled, installiert via Dockerfile)
+# pjsua2 - system package
+
+# WebSocket (fuer GUI Client)
+websocket-client==1.8.0
+
+# GUI (nur lokal, nicht im Docker)
+# PySide6==6.8.0

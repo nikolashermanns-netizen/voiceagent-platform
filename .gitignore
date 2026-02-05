@@ -1,0 +1,50 @@
+# Bestell Bot Voice (separates Projekt)
+Bestell Bot Voice/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Environment Variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker
+*.log
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Data & Workspace (runtime files)
+voiceagent-platform/data/
+voiceagent-platform/workspace/
+voiceagent-platform/config/
+
+# Node
+node_modules/
+
+# Claude Code
+.claude/

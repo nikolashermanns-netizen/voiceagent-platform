@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  voiceagent-core:
+    build:
+      context: .
+      dockerfile: core/Dockerfile
+    container_name: voiceagent-core
+    network_mode: host  # Noetig fuer SIP/RTP
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./workspace:/app/workspace
+      - ./config:/app/config
+      # Katalog-Daten (read-only)
+      - ../Bestell Bot Voice/server/system_katalog:/app/data/system_katalog:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_PATH=/app/data/voiceagent.db
+      - AGENTS_DIR=/app/agents
+      - WORKSPACE_DIR=/app/workspace
+
+  code-sandbox:
+    build:
+      context: ./agents/code_agent/sandbox
+      dockerfile: Dockerfile
+    image: code-sandbox-python
+    # Wird nicht als Service gestartet, nur als Image gebaut
+    # Der Code-Agent startet Container on-demand
+    profiles:
+      - build-only
