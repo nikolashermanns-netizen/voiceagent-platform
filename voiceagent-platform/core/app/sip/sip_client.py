@@ -48,6 +48,9 @@ class AudioMediaPort(pj.AudioMediaPort if PJSUA2_AVAILABLE else object):
         self._samples_per_frame = 960  # 20ms @ 48kHz
         self._bits_per_sample = 16
 
+        # Audio Buffer fuer Frame-Splitting
+        self._audio_buffer = b''
+
         # Statistics
         self._rx_frame_count = 0
         self._tx_frame_count = 0
@@ -145,9 +148,6 @@ class AudioMediaPort(pj.AudioMediaPort if PJSUA2_AVAILABLE else object):
         """
         frame_size = self._samples_per_frame * 2  # 1920 bytes
 
-        if not hasattr(self, '_audio_buffer'):
-            self._audio_buffer = b''
-
         self._audio_buffer += audio_data
 
         frames_queued = 0
@@ -163,8 +163,9 @@ class AudioMediaPort(pj.AudioMediaPort if PJSUA2_AVAILABLE else object):
                 f"Buffer: {len(self._audio_buffer)} bytes"
             )
 
-        if len(self._outgoing_queue) == 50:
-            logger.warning(f"[TX] Audio Queue halb voll: {len(self._outgoing_queue)} Frames")
+        queue_len = len(self._outgoing_queue)
+        if queue_len == 500:
+            logger.warning(f"[TX] Audio Queue halb voll: {queue_len}/1000 Frames")
 
     def set_incoming_callback(self, callback: Callable):
         """Callback fuer eingehendes Audio (vom Anrufer) setzen."""
@@ -174,8 +175,7 @@ class AudioMediaPort(pj.AudioMediaPort if PJSUA2_AVAILABLE else object):
         """Leert die Audio-Queue (fuer Barge-In/Interruption)."""
         count = len(self._outgoing_queue)
         self._outgoing_queue.clear()
-        if hasattr(self, '_audio_buffer'):
-            self._audio_buffer = b''
+        self._audio_buffer = b''
         return count
 
 
@@ -207,6 +207,17 @@ class CallCallback(pj.Call if PJSUA2_AVAILABLE else object):
 
                 try:
                     call_audio = self.getAudioMedia(i)
+
+                    # Tatsaechlichen Codec loggen
+                    try:
+                        port_info = call_audio.getPortInfo()
+                        logger.info(
+                            f"Negotiated Audio: {port_info.format.clockRate}Hz, "
+                            f"{port_info.format.channelCount}ch, "
+                            f"{port_info.format.bitsPerSample}bit"
+                        )
+                    except Exception as e:
+                        logger.debug(f"Konnte Port-Info nicht lesen: {e}")
 
                     if self.audio_media_port:
                         call_audio.startTransmit(self.audio_media_port)
@@ -348,19 +359,33 @@ class SIPClient:
             ep_cfg.logConfig.level = 4
             ep_cfg.logConfig.consoleLevel = 4
 
-            # STUN Server
+            # STUN Server fuer NAT-Traversal
             ep_cfg.uaConfig.stunServer.append("stun.sipgate.de")
+            ep_cfg.uaConfig.stunServer.append("stun.l.google.com:19302")
+
+            # Media Config - RTP Port Range
+            ep_cfg.medConfig.rxDropPct = 0
+            ep_cfg.medConfig.txDropPct = 0
+            ep_cfg.medConfig.clockRate = 48000  # Konferenz-Bridge Clock Rate
+            ep_cfg.medConfig.sndClockRate = 0
+            ep_cfg.medConfig.channelCount = 1
 
             self._endpoint = pj.Endpoint()
             self._endpoint.libCreate()
             self._endpoint.libInit(ep_cfg)
 
-            # UDP Transport mit oeffentlicher IP
+            # UDP Transport mit oeffentlicher IP fuer NAT
             tp_cfg = pj.TransportConfig()
             tp_cfg.port = self.port
+            # RTP Port Range explizit setzen (muss mit Firewall uebereinstimmen)
+            tp_cfg.portRange = 100  # 5060-5160 fuer SIP Transport
+
             if self.public_ip:
                 tp_cfg.publicAddress = self.public_ip
-                logger.info(f"Transport mit oeffentlicher IP: {self.public_ip}")
+                logger.info(f"Transport: Public IP={self.public_ip}, Port={self.port}")
+            else:
+                logger.warning("WARNUNG: SIP_PUBLIC_IP nicht gesetzt! NAT wird nicht funktionieren.")
+
             self._endpoint.transportCreate(pj.PJSIP_TRANSPORT_UDP, tp_cfg)
 
             self._configure_codecs()
@@ -406,11 +431,14 @@ class SIPClient:
         acc_cfg = pj.AccountConfig()
         acc_cfg.idUri = f"sip:{self.user}@{self.server}"
         acc_cfg.regConfig.registrarUri = f"sip:{self.server}:{self.port}"
+        acc_cfg.regConfig.timeoutSec = 300  # Re-Registration alle 5 Min
 
         cred = pj.AuthCredInfo("digest", "*", self.user, 0, self.password)
         acc_cfg.sipConfig.authCreds.append(cred)
 
-        # NAT-Traversal
+        # NAT-Traversal Konfiguration
+        # Da der Server eine oeffentliche IP hat (kein NAT), setzen wir
+        # die oeffentliche IP direkt im SDP (sdpNatRewriteUse)
         acc_cfg.natConfig.sipStunUse = pj.PJSUA_STUN_USE_DEFAULT
         acc_cfg.natConfig.mediaStunUse = pj.PJSUA_STUN_USE_DEFAULT
         acc_cfg.natConfig.contactRewriteUse = 1
@@ -418,6 +446,18 @@ class SIPClient:
         acc_cfg.natConfig.sdpNatRewriteUse = 1
         acc_cfg.natConfig.iceEnabled = False
         acc_cfg.natConfig.turnEnabled = False
+
+        # Public IP fuer SDP Contact/Via Header
+        if self.public_ip:
+            acc_cfg.natConfig.contactRewriteMethod = 2  # Always rewrite
+            logger.info(f"NAT: Public IP {self.public_ip} fuer SDP Contact/Via")
+
+        # RTP Media Config
+        acc_cfg.mediaConfig.transportConfig.port = 4000  # RTP Start-Port
+        acc_cfg.mediaConfig.transportConfig.portRange = 100  # 4000-4100
+        if self.public_ip:
+            acc_cfg.mediaConfig.transportConfig.publicAddress = self.public_ip
+            logger.info(f"RTP: Public Address={self.public_ip}, Ports=4000-4100")
 
         self._account = AccountCallback()
         self._account.on_reg_state = self._on_reg_state

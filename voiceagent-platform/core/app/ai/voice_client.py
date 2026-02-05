@@ -48,6 +48,7 @@ class VoiceClient:
 
         self.muted = False
         self._model = DEFAULT_MODEL
+        self._response_in_progress = False  # Finding #4: Response-Status tracken
 
         # Tools und Instructions kommen vom AgentManager
         self._tools: list[dict] = []
@@ -182,12 +183,18 @@ class VoiceClient:
         if not self._ws or not self._running:
             return
 
+        if self._response_in_progress:
+            logger.warning("[OpenAI] Response bereits aktiv - Greeting uebersprungen")
+            return
+
         try:
+            self._response_in_progress = True
             await self._ws.send_str(json.dumps({
                 "type": "response.create"
             }))
             logger.info("[OpenAI] Begruessung ausgeloest")
         except Exception as e:
+            self._response_in_progress = False
             logger.error(f"Fehler beim Ausloesen der Begruessung: {e}")
 
     async def _receive_loop(self):
@@ -230,7 +237,15 @@ class VoiceClient:
             if self.on_debug_event:
                 await self.on_debug_event(event_type, event)
 
-        if event_type == "response.audio.delta":
+        # --- Response Lifecycle Tracking (Finding #4) ---
+        if event_type == "response.created":
+            self._response_in_progress = True
+
+        elif event_type == "response.done":
+            self._response_in_progress = False
+
+        # --- Audio Events ---
+        elif event_type == "response.audio.delta":
             audio_b64 = event.get("delta", "")
             if audio_b64 and not self.muted:
                 audio_bytes = base64.b64decode(audio_b64)
@@ -244,14 +259,17 @@ class VoiceClient:
                 if self.on_audio_response:
                     await self.on_audio_response(audio_bytes)
 
+        # --- Speech Detection ---
         elif event_type == "input_audio_buffer.speech_started":
             logger.info("[OpenAI] Sprache erkannt - Interruption")
+            self._response_in_progress = False  # Interruption beendet laufende Response
             if self.on_interruption:
                 await self.on_interruption()
 
         elif event_type == "input_audio_buffer.speech_stopped":
             logger.info("[OpenAI] Sprache beendet")
 
+        # --- Transcription ---
         elif event_type == "conversation.item.input_audio_transcription.completed":
             text = event.get("transcript", "")
             if text and self.on_transcript:
@@ -267,10 +285,17 @@ class VoiceClient:
             if text and self.on_transcript:
                 await self.on_transcript("assistant", text, True)
 
+        # --- Errors ---
         elif event_type == "error":
             error = event.get("error", {})
             logger.error(f"[OpenAI] API Error: {error}")
+            # Bei Error ist die Response auch nicht mehr aktiv
+            if "already has an active response" in str(error):
+                logger.warning("[OpenAI] Response war noch aktiv - warte auf Abschluss")
+            else:
+                self._response_in_progress = False
 
+        # --- Function Calls ---
         elif event_type == "response.function_call_arguments.done":
             await self._handle_function_call(event)
 
@@ -307,6 +332,7 @@ class VoiceClient:
             return
 
         try:
+            # 1. Function Output senden
             output_event = {
                 "type": "conversation.item.create",
                 "item": {
@@ -317,12 +343,26 @@ class VoiceClient:
             }
             await self._ws.send_str(json.dumps(output_event))
 
+            # 2. Neue Response anfordern (nur wenn keine aktiv ist)
+            if self._response_in_progress:
+                logger.info(
+                    f"[OpenAI] Response noch aktiv - warte vor response.create "
+                    f"(call_id={call_id})"
+                )
+                # Kurz warten bis die vorherige Response fertig ist
+                for _ in range(50):  # Max 5 Sekunden warten
+                    await asyncio.sleep(0.1)
+                    if not self._response_in_progress:
+                        break
+
+            self._response_in_progress = True
             response_event = {"type": "response.create"}
             await self._ws.send_str(json.dumps(response_event))
 
             logger.info(f"[OpenAI] Function Ergebnis gesendet fuer call_id={call_id}")
 
         except Exception as e:
+            self._response_in_progress = False
             logger.error(f"Fehler beim Senden des Function-Ergebnisses: {e}")
 
     async def send_audio(self, audio_data: bytes):
@@ -378,8 +418,9 @@ class VoiceClient:
                 pass
             self._session = None
 
-        # Reset counters
+        # Reset state (Finding #14)
         self._audio_chunk_count = 0
         self._sent_audio_count = 0
+        self._response_in_progress = False
 
         logger.info("OpenAI Realtime API getrennt")

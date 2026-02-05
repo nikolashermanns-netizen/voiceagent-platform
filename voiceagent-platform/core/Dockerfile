@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     libspeexdsp-dev \
     libsndfile1-dev \
     pkg-config \
+    swig \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
