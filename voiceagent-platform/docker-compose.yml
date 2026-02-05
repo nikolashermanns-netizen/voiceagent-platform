@@ -7,6 +7,10 @@ services:
       dockerfile: core/Dockerfile
     container_name: voiceagent-core
     network_mode: host  # Noetig fuer SIP/RTP
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
     restart: unless-stopped
     env_file:
       - .env
@@ -14,13 +18,12 @@ services:
       - ./data:/app/data
       - ./workspace:/app/workspace
       - ./config:/app/config
+      - ./claude-credentials:/root/.claude:ro  # Claude CLI Auth (MAX Account)
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_PATH=/app/data/voiceagent.db
       - AGENTS_DIR=/app/agents
       - WORKSPACE_DIR=/app/workspace
-      # Claude Agent SDK (Code-Agent)
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 
   code-sandbox:
     build:

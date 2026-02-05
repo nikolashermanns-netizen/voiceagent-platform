@@ -42,10 +42,8 @@ class Settings(BaseSettings):
     SANDBOX_CPU_LIMIT: float = 2.0
     WORKSPACE_DIR: str = "/app/workspace"
 
-    # Claude Coding Agent (Agent SDK)
-    ANTHROPIC_API_KEY: str = ""
-    CLAUDE_MODEL: str = "claude-sonnet-4-20250514"
-    CLAUDE_MAX_BUDGET: float = 2.0  # Max USD pro Aufgabe
+    # Claude Coding Agent (CLI mit MAX Account)
+    CLAUDE_MODEL: str = "claude-opus-4-6"
     CLAUDE_MAX_TURNS: int = 50  # Max Iterationen pro Aufgabe
     CLAUDE_ALLOWED_TOOLS: list[str] = [
         "Read", "Edit", "Write", "Glob", "Grep",

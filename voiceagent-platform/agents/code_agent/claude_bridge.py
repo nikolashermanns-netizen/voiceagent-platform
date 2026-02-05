@@ -1,27 +1,45 @@
 """
-ClaudeCodingBridge - Wrapper um claude-agent-sdk fuer den CodeAgent.
+ClaudeCodingBridge - Wrapper um Claude CLI fuer den CodeAgent.
 
-Fuehrt Coding-Aufgaben mit Claude CLI aus:
+Fuehrt Coding-Aufgaben mit Claude CLI (MAX Account) aus:
 - Code schreiben, lesen, editieren
 - Bash-Befehle ausfuehren (Tests, Build, Git)
 - Codebase navigieren und verstehen
 - Sessions pro Projekt persistieren
+
+Nutzt die Claude CLI als Subprocess statt des Agent SDK,
+damit der MAX Account verwendet werden kann.
 """
 
 import asyncio
+import json
 import logging
 import os
+import shutil
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Optional
-
-from claude_agent_sdk import (
-    ClaudeAgentOptions,
-    query,
-)
 
 from core.app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _find_claude_cli() -> str:
+    """Findet den Pfad zur Claude CLI."""
+    path = shutil.which("claude")
+    if path:
+        return path
+    # Typische Installationspfade pruefen
+    for candidate in [
+        os.path.expanduser("~/.claude/local/claude"),
+        "/usr/local/bin/claude",
+        os.path.expanduser("~/.npm-global/bin/claude"),
+    ]:
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    raise FileNotFoundError(
+        "Claude CLI nicht gefunden. Bitte installieren: npm install -g @anthropic-ai/claude-code"
+    )
 
 
 @dataclass
@@ -41,7 +59,6 @@ class CodingResult:
 
         parts = []
         if self.summary:
-            # Zusammenfassung auf ~500 Zeichen kuerzen fuer Sprachausgabe
             summary = self.summary
             if len(summary) > 500:
                 summary = summary[:497] + "..."
@@ -59,14 +76,17 @@ class CodingResult:
 
 class ClaudeCodingBridge:
     """
-    Bridge zwischen VoiceAgent CodeAgent und Claude Agent SDK.
+    Bridge zwischen VoiceAgent CodeAgent und Claude CLI.
 
-    Fuehrt Coding-Aufgaben aus, trackt Sessions und streamt Progress.
+    Ruft die Claude CLI als Subprocess auf (nutzt MAX Account Auth).
+    Streamt JSON-Output fuer Progress-Updates.
     """
 
     def __init__(self, workspace_dir: str):
         self.workspace_dir = workspace_dir
         self._sessions: dict[str, str] = {}  # project_id -> session_id
+        self._claude_path = _find_claude_cli()
+        logger.info(f"[ClaudeBridge] CLI gefunden: {self._claude_path}")
 
     def _get_project_dir(self, project_id: str) -> str:
         """Gibt das Arbeitsverzeichnis fuer ein Projekt zurueck."""
@@ -89,6 +109,41 @@ class ClaudeCodingBridge:
             "- Fasse am Ende zusammen was du getan hast"
         )
 
+    def _build_cli_args(
+        self,
+        project_dir: str,
+        *,
+        allowed_tools: Optional[list[str]] = None,
+        max_turns: Optional[int] = None,
+        system_prompt: Optional[str] = None,
+        session_id: Optional[str] = None,
+        output_format: str = "stream-json",
+    ) -> list[str]:
+        """Baut die CLI-Argumente fuer claude. Prompt wird via stdin uebergeben."""
+        args = [
+            self._claude_path,
+            "--print",  # Non-interactive mode
+            "--output-format", output_format,
+            "--model", settings.CLAUDE_MODEL,
+            "--dangerously-skip-permissions",  # Keine interaktiven Rueckfragen
+            "--verbose",
+        ]
+
+        if max_turns:
+            args.extend(["--max-turns", str(max_turns)])
+
+        if system_prompt:
+            args.extend(["--append-system-prompt", system_prompt])
+
+        if session_id:
+            args.extend(["--resume", session_id])
+
+        if allowed_tools:
+            # Komma-separiert uebergeben damit variadic flag nicht den Rest frisst
+            args.extend(["--allowedTools", ",".join(allowed_tools)])
+
+        return args
+
     async def execute_task(
         self,
         prompt: str,
@@ -97,7 +152,7 @@ class ClaudeCodingBridge:
         session_store=None,
     ) -> CodingResult:
         """
-        Fuehrt eine Coding-Aufgabe mit Claude aus.
+        Fuehrt eine Coding-Aufgabe mit Claude CLI aus.
 
         Args:
             prompt: Aufgabenbeschreibung
@@ -115,65 +170,78 @@ class ClaudeCodingBridge:
         if not resume_session and session_store:
             resume_session = await session_store.get_session(project_id)
 
-        options = ClaudeAgentOptions(
+        cli_args = self._build_cli_args(
+            project_dir=project_dir,
             allowed_tools=settings.CLAUDE_ALLOWED_TOOLS,
-            permission_mode="acceptEdits",
-            cwd=project_dir,
             max_turns=settings.CLAUDE_MAX_TURNS,
             system_prompt=self._build_system_prompt(project_id),
+            session_id=resume_session,
         )
-
-        if settings.CLAUDE_MAX_BUDGET > 0:
-            options.max_budget_usd = settings.CLAUDE_MAX_BUDGET
-
-        if settings.CLAUDE_MODEL:
-            options.model = settings.CLAUDE_MODEL
-
-        if resume_session:
-            options.resume = resume_session
 
         result = CodingResult()
         result_parts = []
 
         try:
-            async for message in query(prompt=prompt, options=options):
-                msg_type = getattr(message, "type", None)
+            logger.info(f"[ClaudeBridge] Starte CLI: {' '.join(cli_args[:6])}...")
+
+            process = await asyncio.create_subprocess_exec(
+                *cli_args,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=project_dir,
+            )
+
+            # Prompt via stdin senden
+            process.stdin.write(prompt.encode("utf-8"))
+            process.stdin.close()
+
+            # Stream JSON-Output zeilenweise lesen
+            async for line_bytes in process.stdout:
+                line = line_bytes.decode("utf-8", errors="replace").strip()
+                if not line:
+                    continue
+
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    # Nicht-JSON-Output (z.B. Warnings) loggen
+                    logger.debug(f"[ClaudeBridge] Non-JSON: {line[:200]}")
+                    continue
+
+                msg_type = event.get("type", "")
 
                 if msg_type == "assistant":
-                    content = getattr(message, "content", None)
-                    if not content:
-                        content = getattr(
-                            getattr(message, "message", None), "content", []
-                        )
-                    for block in (content or []):
-                        # Text-Block
-                        if hasattr(block, "text") and block.text:
-                            result_parts.append(block.text)
-                            if on_progress:
-                                # Nur erste 200 Zeichen pro Block senden
-                                await on_progress(block.text[:200])
+                    # Text-Content extrahieren
+                    for block in event.get("message", {}).get("content", []):
+                        if block.get("type") == "text":
+                            text = block.get("text", "")
+                            if text:
+                                result_parts.append(text)
+                                if on_progress:
+                                    await on_progress(text[:200])
 
-                        # Tool-Use-Block
-                        if hasattr(block, "name") and block.name:
-                            tool_name = block.name
-                            result.tools_used.append(tool_name)
-                            if on_progress:
-                                await on_progress(f"[Tool: {tool_name}]")
+                        elif block.get("type") == "tool_use":
+                            tool_name = block.get("name", "")
+                            if tool_name:
+                                result.tools_used.append(tool_name)
+                                if on_progress:
+                                    await on_progress(f"[Tool: {tool_name}]")
 
                             # Datei-Aenderungen tracken
-                            tool_input = getattr(block, "input", {}) or {}
+                            tool_input = block.get("input", {})
                             if tool_name in ("Edit", "Write") and "file_path" in tool_input:
                                 fpath = tool_input["file_path"]
                                 if fpath not in result.files_changed:
                                     result.files_changed.append(fpath)
 
                 elif msg_type == "result":
-                    result_text = getattr(message, "result", "")
+                    result_text = event.get("result", "")
                     if result_text:
                         result_parts.append(result_text)
 
                     # Session-ID speichern
-                    sid = getattr(message, "session_id", None)
+                    sid = event.get("session_id")
                     if sid:
                         self._sessions[project_id] = sid
                         result.session_id = sid
@@ -181,9 +249,28 @@ class ClaudeCodingBridge:
                             summary = result_text[:200] if result_text else prompt[:200]
                             await session_store.save_session(project_id, sid, summary)
 
+            # Auf Prozess-Ende warten
+            await process.wait()
+
+            if process.returncode != 0:
+                stderr = await process.stderr.read()
+                stderr_text = stderr.decode("utf-8", errors="replace").strip()
+                if stderr_text and not result_parts:
+                    logger.error(f"[ClaudeBridge] CLI stderr: {stderr_text}")
+                    result.success = False
+                    result.error = stderr_text[:500]
+                    if on_progress:
+                        await on_progress(f"Fehler: {stderr_text[:200]}")
+                    return result
+
             result.summary = "\n".join(result_parts) if result_parts else "Aufgabe abgeschlossen."
             result.success = True
 
+        except FileNotFoundError:
+            msg = "Claude CLI nicht gefunden. Ist 'claude' installiert und im PATH?"
+            logger.error(f"[ClaudeBridge] {msg}")
+            result.success = False
+            result.error = msg
         except Exception as e:
             logger.error(f"[ClaudeBridge] Fehler bei Aufgabe: {e}", exc_info=True)
             result.success = False
@@ -197,7 +284,7 @@ class ClaudeCodingBridge:
         """
         Fragt Claude nach dem aktuellen Projekt-Status.
 
-        Nutzt eine kurze One-Shot-Query ohne Tool-Zugriff.
+        Nutzt eine kurze One-Shot-Query mit eingeschraenkten Tools.
         """
         project_dir = self._get_project_dir(project_id)
 
@@ -206,47 +293,61 @@ class ClaudeCodingBridge:
 
         resume_session = self._sessions.get(project_id)
 
-        options = ClaudeAgentOptions(
-            allowed_tools=["Read", "Glob", "Grep"],
-            permission_mode="acceptEdits",
-            cwd=project_dir,
-            max_turns=5,
-            system_prompt=(
-                "Gib eine kurze Zusammenfassung des Projekts. "
-                "Liste die wichtigsten Dateien und was sie tun. "
-                "Halte dich kurz (max 3-4 Saetze), da dies per Sprache vorgelesen wird. "
-                "Antworte auf Deutsch."
-            ),
+        system_prompt = (
+            "Gib eine kurze Zusammenfassung des Projekts. "
+            "Liste die wichtigsten Dateien und was sie tun. "
+            "Halte dich kurz (max 3-4 Saetze), da dies per Sprache vorgelesen wird. "
+            "Antworte auf Deutsch."
         )
 
-        if resume_session:
-            options.resume = resume_session
+        status_prompt = "Was ist der aktuelle Stand dieses Projekts?"
 
-        result_parts = []
+        cli_args = self._build_cli_args(
+            project_dir=project_dir,
+            allowed_tools=["Read", "Glob", "Grep"],
+            max_turns=5,
+            system_prompt=system_prompt,
+            session_id=resume_session,
+            output_format="json",  # Einfacher JSON-Output (kein Stream noetig)
+        )
 
         try:
-            async for message in query(
-                prompt="Was ist der aktuelle Stand dieses Projekts?",
-                options=options,
-            ):
-                if getattr(message, "type", None) == "result":
-                    text = getattr(message, "result", "")
-                    if text:
-                        result_parts.append(text)
-                elif getattr(message, "type", None) == "assistant":
-                    content = getattr(message, "content", None)
-                    if not content:
-                        content = getattr(
-                            getattr(message, "message", None), "content", []
-                        )
-                    for block in (content or []):
-                        if hasattr(block, "text") and block.text:
-                            result_parts.append(block.text)
+            process = await asyncio.create_subprocess_exec(
+                *cli_args,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=project_dir,
+            )
+
+            stdout, stderr = await process.communicate(input=status_prompt.encode("utf-8"))
+            output = stdout.decode("utf-8", errors="replace").strip()
+
+            if not output:
+                if stderr:
+                    logger.error(f"[ClaudeBridge] Status stderr: {stderr.decode()[:500]}")
+                return "Konnte Status nicht abrufen."
+
+            # JSON-Output parsen
+            try:
+                data = json.loads(output)
+                # json format gibt result direkt zurueck
+                result_text = data.get("result", "")
+                if result_text:
+                    return result_text
+                # Fallback: Content-Blocks durchsuchen
+                for block in data.get("content", []):
+                    if block.get("type") == "text":
+                        return block.get("text", "")
+            except json.JSONDecodeError:
+                # Plaintext-Fallback
+                return output[:500]
+
+            return "Keine Informationen verfuegbar."
+
         except Exception as e:
             logger.error(f"[ClaudeBridge] Status-Abfrage fehlgeschlagen: {e}")
             return f"Konnte Status nicht abrufen: {e}"
-
-        return "\n".join(result_parts) if result_parts else "Keine Informationen verfuegbar."
 
     def clear_session(self, project_id: str):
         """Loescht die Session fuer ein Projekt."""

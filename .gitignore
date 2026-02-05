@@ -43,8 +43,12 @@ voiceagent-platform/data/
 voiceagent-platform/workspace/
 voiceagent-platform/config/
 
+# Claude CLI Credentials (MAX Account - NIEMALS committen!)
+voiceagent-platform/claude-credentials/
+
 # Node
 node_modules/
 
 # Claude Code
 .claude/
+nul

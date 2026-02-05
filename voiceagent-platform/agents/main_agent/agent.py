@@ -76,7 +76,7 @@ class MainAgent(BaseAgent):
             return []
         agents = []
         for agent in self._registry.get_all_agents():
-            if agent.name != "main_agent":
+            if agent.name not in ("main_agent", "security_agent"):
                 agents.append({
                     "name": agent.name,
                     "display_name": agent.display_name,

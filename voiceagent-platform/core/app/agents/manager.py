@@ -29,6 +29,9 @@ class AgentManager:
         self._current_caller: Optional[str] = None
         self._call_context: dict = {}
 
+        # Security Gate: Anruf ist erst nach erfolgreichem Unlock freigeschaltet
+        self._call_unlocked: bool = False
+
         # Callback wenn Agent gewechselt wird
         self.on_agent_changed: Optional[Callable[[str, str], None]] = None
 
@@ -47,6 +50,16 @@ class AgentManager:
         """Ist ein Anruf aktiv?"""
         return self._current_caller is not None
 
+    @property
+    def call_unlocked(self) -> bool:
+        """Ist der aktuelle Anruf entsperrt?"""
+        return self._call_unlocked
+
+    def set_call_unlocked(self, unlocked: bool = True):
+        """Setzt den Unlock-Status fuer den aktuellen Anruf."""
+        self._call_unlocked = unlocked
+        logger.info(f"Call unlock status: {unlocked}")
+
     async def start_call(self, caller_id: str, agent_name: str = None):
         """
         Startet einen neuen Anruf und aktiviert den passenden Agent.
@@ -57,6 +70,7 @@ class AgentManager:
         """
         self._current_caller = caller_id
         self._call_context = {"caller_id": caller_id}
+        self._call_unlocked = False  # Security Gate: Jeder neue Anruf startet gesperrt
 
         # Agent waehlen
         target_name = agent_name or self._default_agent_name
@@ -87,6 +101,7 @@ class AgentManager:
         self._active_agent = None
         self._current_caller = None
         self._call_context = {}
+        self._call_unlocked = False  # Security Gate: Bei Anrufende zuruecksetzen
 
     async def switch_agent(self, agent_name: str) -> bool:
         """
@@ -156,6 +171,11 @@ class AgentManager:
         """
         if not self._active_agent:
             return "Fehler: Kein Agent aktiv."
+
+        # Security Gate: Wenn Anruf nicht entsperrt, nur security_agent Tools erlauben
+        if not self._call_unlocked and self._active_agent.name != "security_agent":
+            logger.warning(f"Tool '{tool_name}' blockiert - Anruf nicht entsperrt")
+            return "Fehler: Anruf nicht freigeschaltet. Bitte zuerst den Zugangs-Code eingeben."
 
         try:
             return await self._active_agent.execute_tool(tool_name, arguments)

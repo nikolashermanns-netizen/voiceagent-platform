@@ -195,6 +195,10 @@ async def on_function_call(call_id: str, name: str, arguments: dict) -> str:
         target_agent = result.split(":", 1)[1]
         success = await agent_manager.switch_agent(target_agent)
         if success:
+            # Security Gate: Wenn von security_agent weggewechselt wird, Anruf freischalten
+            if agent_manager.active_agent_name != "security_agent":
+                agent_manager.set_call_unlocked(True)
+
             # OpenAI Session mit neuen Tools/Instructions aktualisieren
             if voice_client and voice_client.is_connected:
                 await voice_client.update_session(
@@ -275,7 +279,7 @@ async def lifespan(app: FastAPI):
     agent_registry.discover_agents(settings.AGENTS_DIR)
     logger.info(f"Agenten entdeckt: {agent_registry.count}")
 
-    agent_manager = AgentManager(agent_registry, default_agent="main_agent")
+    agent_manager = AgentManager(agent_registry, default_agent="security_agent")
     agent_manager.on_agent_changed = on_agent_changed
 
     agent_router = AgentRouter(agent_registry)

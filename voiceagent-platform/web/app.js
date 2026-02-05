@@ -56,8 +56,6 @@
         DOM.tabButtons = document.querySelectorAll('.tabs__tab');
         DOM.tabPanels  = document.querySelectorAll('.tabs__content');
 
-        DOM.orderList      = document.getElementById('order-list');
-        DOM.orderSummary   = document.getElementById('order-summary');
         DOM.taskList       = document.getElementById('task-list');
         DOM.codingStatus   = document.getElementById('coding-status');
         DOM.codingProject  = document.getElementById('coding-project');
@@ -257,10 +255,6 @@
                 addDebug('[Tool Result] ' + (data.name || '') + ': ' + result);
             },
 
-            order_update: function (data) {
-                UI.updateOrders(data.order || {});
-            },
-
             agent_changed: function (data) {
                 State.activeAgent = data.new_agent || '';
                 addTranscriptLine('system', 'Agent: ' + (data.old_agent || '') + ' → ' + State.activeAgent);
@@ -363,29 +357,6 @@
                     break;
                 }
             }
-        },
-
-        updateOrders: function (order) {
-            var items = order.items || [];
-            DOM.orderList.innerHTML = '';
-
-            if (items.length === 0) {
-                DOM.orderList.innerHTML = '<div class="empty-state">Keine Bestellung aktiv</div>';
-            } else {
-                items.forEach(function (item) {
-                    var div = document.createElement('div');
-                    div.className = 'order-item';
-                    div.innerHTML =
-                        '<span class="order-item__name">' + esc(item.produktname || '') +
-                        ' (' + esc(item.kennung || '') + ')</span>' +
-                        '<span class="order-item__qty">' + (item.menge || 0) + 'x</span>';
-                    DOM.orderList.appendChild(div);
-                });
-            }
-
-            DOM.orderSummary.textContent =
-                'Bestellung: ' + (order.item_count || 0) + ' Positionen, ' +
-                (order.total_quantity || 0) + ' Stueck';
         },
 
         updateTasks: function (tasks) {

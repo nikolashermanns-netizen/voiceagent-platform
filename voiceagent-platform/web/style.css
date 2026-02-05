@@ -320,23 +320,6 @@ body {
 .tabs__content--active { display: flex; flex-direction: column; }
 
 /* === Order === */
-.order-list { flex: 1; overflow-y: auto; }
-.order-item {
-    display: flex;
-    justify-content: space-between;
-    padding: var(--space-sm) var(--space-md);
-    border-bottom: 1px solid var(--color-border);
-}
-.order-item__qty { color: var(--color-primary); font-weight: 600; }
-
-.order-summary {
-    padding: var(--space-md);
-    font-weight: 600;
-    border-top: 1px solid var(--color-border);
-    color: var(--color-primary);
-    flex-shrink: 0;
-}
-
 /* === Tasks === */
 .task-item {
     display: flex;
