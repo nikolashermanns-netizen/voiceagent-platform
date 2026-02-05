@@ -53,8 +53,12 @@ COPY core/ /app/core/
 COPY agents/ /app/agents/
 COPY web/ /app/web/
 
+# Non-root User fuer Claude CLI (--dangerously-skip-permissions verweigert root)
+RUN useradd -m -s /bin/bash claude
+
 # Data Verzeichnisse
-RUN mkdir -p /app/data /app/workspace /app/config
+RUN mkdir -p /app/data /app/workspace /app/config \
+    && chown claude:claude /app/workspace
 
 # Environment
 ENV PYTHONUNBUFFERED=1

@@ -24,6 +24,23 @@ from core.app.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _get_claude_user_kwargs() -> dict:
+    """Subprocess-kwargs um als non-root 'claude' User zu laufen.
+
+    Claude CLI verweigert --dangerously-skip-permissions als root.
+    Im Docker-Container gibt es den User 'claude', lokal (Windows) nicht.
+    """
+    try:
+        import pwd
+        pw = pwd.getpwnam("claude")
+        env = os.environ.copy()
+        env["HOME"] = pw.pw_dir
+        return {"user": pw.pw_uid, "group": pw.pw_gid, "env": env}
+    except (ImportError, KeyError):
+        # Windows oder User existiert nicht (lokale Entwicklung)
+        return {}
+
+
 def _find_claude_cli() -> str:
     """Findet den Pfad zur Claude CLI."""
     path = shutil.which("claude")
@@ -92,6 +109,13 @@ class ClaudeCodingBridge:
         """Gibt das Arbeitsverzeichnis fuer ein Projekt zurueck."""
         project_dir = os.path.join(self.workspace_dir, project_id)
         os.makedirs(project_dir, exist_ok=True)
+        # Sicherstellen, dass 'claude' User schreiben kann
+        try:
+            import pwd
+            pw = pwd.getpwnam("claude")
+            os.chown(project_dir, pw.pw_uid, pw.pw_gid)
+        except (ImportError, KeyError, OSError):
+            pass
         return project_dir
 
     def _build_system_prompt(self, project_id: str) -> str:
@@ -190,6 +214,7 @@ class ClaudeCodingBridge:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=project_dir,
+                **_get_claude_user_kwargs(),
             )
 
             # Prompt via stdin senden
@@ -318,6 +343,7 @@ class ClaudeCodingBridge:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=project_dir,
+                **_get_claude_user_kwargs(),
             )
 
             stdout, stderr = await process.communicate(input=status_prompt.encode("utf-8"))

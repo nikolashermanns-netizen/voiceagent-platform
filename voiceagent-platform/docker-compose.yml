@@ -18,7 +18,7 @@ services:
       - ./data:/app/data
       - ./workspace:/app/workspace
       - ./config:/app/config
-      - ./claude-credentials:/root/.claude:ro  # Claude CLI Auth (MAX Account)
+      - ./claude-credentials:/home/claude/.claude:ro  # Claude CLI Auth (MAX Account)
     environment:
       - PYTHONUNBUFFERED=1
       - DATABASE_PATH=/app/data/voiceagent.db
