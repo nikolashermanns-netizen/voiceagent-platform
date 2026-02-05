@@ -80,6 +80,20 @@ CREATE TABLE IF NOT EXISTS agent_configs (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Blacklist (gesperrte Rufnummern)
+CREATE TABLE IF NOT EXISTS blacklist (
+    caller_id TEXT PRIMARY KEY,
+    reason TEXT,
+    blocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Fehlgeschlagene Unlock-Anrufe (fuer Auto-Blacklist)
+CREATE TABLE IF NOT EXISTS failed_unlock_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    caller_id TEXT NOT NULL,
+    failed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Schema-Version
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY,

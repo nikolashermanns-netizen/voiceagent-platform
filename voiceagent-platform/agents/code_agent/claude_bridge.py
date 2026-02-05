@@ -24,21 +24,22 @@ from core.app.config import settings
 logger = logging.getLogger(__name__)
 
 
-def _get_claude_user_kwargs() -> dict:
-    """Subprocess-kwargs um als non-root 'claude' User zu laufen.
+def _get_claude_user_config() -> tuple[list[str], dict]:
+    """Gibt (command_prefix, subprocess_kwargs) zurueck um als 'claude' User zu laufen.
 
     Claude CLI verweigert --dangerously-skip-permissions als root.
     Im Docker-Container gibt es den User 'claude', lokal (Windows) nicht.
+    Nutzt 'runuser' statt subprocess user/group kwargs (asyncio-kompatibel).
     """
     try:
         import pwd
         pw = pwd.getpwnam("claude")
         env = os.environ.copy()
         env["HOME"] = pw.pw_dir
-        return {"user": pw.pw_uid, "group": pw.pw_gid, "env": env}
+        return (["runuser", "-u", "claude", "--"], {"env": env})
     except (ImportError, KeyError):
         # Windows oder User existiert nicht (lokale Entwicklung)
-        return {}
+        return ([], {})
 
 
 def _find_claude_cli() -> str:
@@ -208,13 +209,14 @@ class ClaudeCodingBridge:
         try:
             logger.info(f"[ClaudeBridge] Starte CLI: {' '.join(cli_args[:6])}...")
 
+            cmd_prefix, sub_kwargs = _get_claude_user_config()
             process = await asyncio.create_subprocess_exec(
-                *cli_args,
+                *cmd_prefix, *cli_args,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=project_dir,
-                **_get_claude_user_kwargs(),
+                **sub_kwargs,
             )
 
             # Prompt via stdin senden
@@ -337,13 +339,14 @@ class ClaudeCodingBridge:
         )
 
         try:
+            cmd_prefix, sub_kwargs = _get_claude_user_config()
             process = await asyncio.create_subprocess_exec(
-                *cli_args,
+                *cmd_prefix, *cli_args,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=project_dir,
-                **_get_claude_user_kwargs(),
+                **sub_kwargs,
             )
 
             stdout, stderr = await process.communicate(input=status_prompt.encode("utf-8"))

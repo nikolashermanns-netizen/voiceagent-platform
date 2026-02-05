@@ -25,6 +25,7 @@ from core.app.agents.manager import AgentManager
 from core.app.tasks.store import TaskStore
 from core.app.tasks.executor import TaskExecutor
 from core.app.ws.manager import ConnectionManager
+from core.app.blacklist.store import BlacklistStore
 from core.app.api.routes import setup_routes, is_ip_allowed
 from core.app.api.ws_routes import setup_ws_routes
 
@@ -63,6 +64,19 @@ async def on_incoming_call(caller_id: str, remote_ip: str = None):
     agent_router: AgentRouter = app_state["agent_router"]
 
     logger.info(f"Eingehender Anruf von: {caller_id} (IP: {remote_ip})")
+
+    # Blacklist pruefen (vor IP-Check, da Blacklist spezifischer ist)
+    blacklist_store: BlacklistStore = app_state.get("blacklist_store")
+    if blacklist_store and await blacklist_store.is_blacklisted(caller_id):
+        logger.warning(f"ABGELEHNT: Anruf von geblockter Nummer {caller_id}")
+        await sip_client.reject_call(403)
+        await ws_manager.broadcast({
+            "type": "call_rejected",
+            "caller_id": caller_id,
+            "remote_ip": remote_ip,
+            "reason": "Nummer auf Blacklist",
+        })
+        return
 
     # IP-Whitelist pruefen
     if not is_ip_allowed(remote_ip, caller_id):
@@ -190,6 +204,36 @@ async def on_function_call(call_id: str, name: str, arguments: dict) -> str:
     # Agent fuehrt Tool aus
     result = await agent_manager.execute_tool(name, arguments)
 
+    # Pruefen ob das Ergebnis ein Hangup-Signal ist (Security Gate: zu viele Fehlversuche)
+    if result and result.startswith("__HANGUP__"):
+        sip_client: SIPClient = app_state["sip_client"]
+        blacklist_store: BlacklistStore = app_state.get("blacklist_store")
+        caller_id = agent_manager._current_caller
+
+        logger.warning(f"Anruf wird beendet (Security Gate): {caller_id}")
+
+        # Fehlgeschlagenen Anruf aufzeichnen und Auto-Blacklist pruefen
+        if blacklist_store and caller_id:
+            await blacklist_store.record_failed_call(caller_id)
+            blacklisted = await blacklist_store.check_and_auto_blacklist(caller_id)
+            if blacklisted:
+                await ws_manager.broadcast({
+                    "type": "blacklist_updated",
+                })
+
+        # Auflegen
+        if sip_client and sip_client.is_in_call:
+            await sip_client.hangup()
+
+        result = "Anruf wird beendet - zu viele fehlgeschlagene Versuche."
+
+        await ws_manager.broadcast({
+            "type": "function_result",
+            "name": name,
+            "result": result,
+        })
+        return result
+
     # Pruefen ob das Ergebnis ein Agent-Switch-Signal ist
     if result and result.startswith("__SWITCH__:"):
         target_agent = result.split(":", 1)[1]
@@ -274,6 +318,9 @@ async def lifespan(app: FastAPI):
     task_store = TaskStore(db)
     task_executor = TaskExecutor(task_store)
 
+    # Blacklist-System
+    blacklist_store = BlacklistStore(db)
+
     # Agent-System
     agent_registry = AgentRegistry()
     agent_registry.discover_agents(settings.AGENTS_DIR)
@@ -298,6 +345,7 @@ async def lifespan(app: FastAPI):
         "db": db,
         "task_store": task_store,
         "task_executor": task_executor,
+        "blacklist_store": blacklist_store,
         "agent_registry": agent_registry,
         "agent_manager": agent_manager,
         "agent_router": agent_router,

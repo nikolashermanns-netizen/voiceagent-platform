@@ -4,6 +4,8 @@ Security-Gate Agent fuer VoiceAgent Platform.
 Erster Kontaktpunkt fuer jeden Anruf. Erfordert einen
 numerischen Entsperr-Code bevor der Anrufer zu anderen
 Agenten weitergeleitet wird.
+
+Nach 3 fehlgeschlagenen Versuchen wird der Anruf beendet.
 """
 
 import logging
@@ -13,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 # Der Code existiert NUR hier in Python - niemals in AI Instructions
 _UNLOCK_CODE = "7234"
+
+# Maximale Versuche pro Anruf
+MAX_ATTEMPTS = 3
 
 SECURITY_AGENT_INSTRUCTIONS = """Du bist ein Sicherheits-Agent.
 
@@ -25,12 +30,14 @@ Frage den Anrufer nach dem Code und nutze dann das Tool 'unlock' um ihn zu pruef
 - Du KENNST den Code NICHT
 - Du pruefst den Code NICHT selbst - das Tool prueft ihn serverseitig
 - Frage hoeflich nach dem Code
-- Bei falschem Code: Sage dass der Code falsch war und frage erneut
+- Bei falschem Code: Sage dass der Code falsch war und nenne die verbleibenden Versuche
 - Bei richtigem Code: Sage dass der Zugang gewaehrt wurde
+- Der Anrufer hat maximal 3 Versuche
+- Nach 3 falschen Versuchen wird der Anruf automatisch beendet
 - Halte dich kurz und professionell
 
 === BEGRUESSUNG ===
-"Willkommen. Bitte nenne mir den Entsperr-Code um fortzufahren."
+"Willkommen. Bitte nenne mir den Entsperr-Code um fortzufahren. Du hast 3 Versuche."
 
 === WICHTIG ===
 - Du hast NUR ein Tool: 'unlock'
@@ -42,6 +49,10 @@ Frage den Anrufer nach dem Code und nutze dann das Tool 'unlock' um ihn zu pruef
 
 class SecurityAgent(BaseAgent):
     """Security-Gate Agent - erfordert Unlock-Code vor Zugang."""
+
+    def __init__(self):
+        self._failed_attempts = 0
+        self._current_caller = None
 
     @property
     def name(self) -> str:
@@ -88,6 +99,12 @@ class SecurityAgent(BaseAgent):
     def get_instructions(self) -> str:
         return SECURITY_AGENT_INSTRUCTIONS
 
+    async def on_call_start(self, caller_id: str):
+        """Reset Versuche bei neuem Anruf."""
+        self._failed_attempts = 0
+        self._current_caller = caller_id
+        logger.info(f"[SecurityAgent] Call gestartet fuer {caller_id}, Versuche zurueckgesetzt")
+
     async def execute_tool(self, tool_name: str, arguments: dict) -> str:
         logger.info(f"[SecurityAgent] Tool: {tool_name}({arguments})")
 
@@ -110,8 +127,24 @@ class SecurityAgent(BaseAgent):
             logger.info("[SecurityAgent] Entsperr-Code KORREKT - Zugang gewaehrt")
             return "__SWITCH__:main_agent"
         else:
-            logger.warning(f"[SecurityAgent] Falscher Code eingegeben")
-            return "Der Code ist FALSCH. Bitte frage den Anrufer erneut nach dem korrekten Code."
+            self._failed_attempts += 1
+            remaining = MAX_ATTEMPTS - self._failed_attempts
+
+            if self._failed_attempts >= MAX_ATTEMPTS:
+                logger.warning(
+                    f"[SecurityAgent] {MAX_ATTEMPTS} fehlgeschlagene Versuche "
+                    f"fuer {self._current_caller} - Anruf wird beendet"
+                )
+                return "__HANGUP__"
+            else:
+                logger.warning(
+                    f"[SecurityAgent] Falscher Code (Versuch {self._failed_attempts}/{MAX_ATTEMPTS})"
+                )
+                return (
+                    f"Der Code ist FALSCH. Das war Versuch {self._failed_attempts} von {MAX_ATTEMPTS}. "
+                    f"Noch {remaining} Versuch{'e' if remaining > 1 else ''} verbleibend. "
+                    f"Bitte frage den Anrufer erneut nach dem korrekten Code."
+                )
 
     def matches_intent(self, text: str) -> float:
         """Security Agent ist nicht per Intent erreichbar."""

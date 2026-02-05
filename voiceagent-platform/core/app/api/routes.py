@@ -247,6 +247,31 @@ def setup_routes(app_state):
             raise HTTPException(status_code=404, detail="Task nicht gefunden")
         return {"error": "Task Executor nicht verfuegbar"}
 
+    # ============== Blacklist ==============
+
+    @router.get("/blacklist")
+    async def get_blacklist():
+        """Alle geblockten Nummern abrufen."""
+        blacklist_store = app_state.get("blacklist_store")
+        if blacklist_store:
+            entries = await blacklist_store.get_all()
+            return {"entries": entries}
+        return {"entries": []}
+
+    @router.delete("/blacklist/{caller_id:path}")
+    async def remove_from_blacklist(caller_id: str):
+        """Nummer von der Blacklist entfernen."""
+        blacklist_store = app_state.get("blacklist_store")
+        if blacklist_store:
+            removed = await blacklist_store.remove(caller_id)
+            if removed:
+                ws_manager = app_state.get("ws_manager")
+                if ws_manager:
+                    await ws_manager.broadcast({"type": "blacklist_updated"})
+                return {"status": "ok", "removed": caller_id}
+            raise HTTPException(status_code=404, detail="Nummer nicht auf Blacklist")
+        return {"status": "error"}
+
     # ============== Firewall ==============
 
     @router.get("/firewall")
