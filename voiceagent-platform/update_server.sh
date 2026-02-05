@@ -157,8 +157,17 @@ if [ -d "$REMOTE_DIR/.git" ]; then
             git pull || error "Git pull fehlgeschlagen"
         else
             warn "Echte lokale Aenderungen gefunden:"
-            git diff --stat HEAD
-            error "Git pull abgebrochen. Bitte Aenderungen manuell mergen."
+            echo ""
+            git diff HEAD
+            echo ""
+            read -p "$(echo -e "${YELLOW}[Remote]${NC} Aenderungen ueberschreiben und Pull fortsetzen? (j/n): ")" answer < /dev/tty
+            if [ "$answer" = "j" ] || [ "$answer" = "J" ] || [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+                warn "Resette lokale Aenderungen..."
+                git checkout -- $DIRTY_FILES
+                git pull || error "Git pull fehlgeschlagen"
+            else
+                error "Git pull abgebrochen."
+            fi
         fi
     fi
 else
@@ -297,8 +306,17 @@ if ! git -C "$REMOTE_DIR" pull 2>&1; then
         git pull || { echo -e "\033[0;31m[Remote]\033[0m Git pull fehlgeschlagen"; exit 1; }
     else
         echo -e "\033[1;33m[Remote]\033[0m Echte lokale Aenderungen gefunden:"
-        git diff --stat HEAD
-        echo -e "\033[0;31m[Remote]\033[0m Git pull abgebrochen. Bitte Aenderungen manuell mergen."; exit 1
+        echo ""
+        git diff HEAD
+        echo ""
+        read -p "$(echo -e "\033[1;33m[Remote]\033[0m Aenderungen ueberschreiben und Pull fortsetzen? (j/n): ")" answer < /dev/tty
+        if [ "$answer" = "j" ] || [ "$answer" = "J" ] || [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+            echo -e "\033[1;33m[Remote]\033[0m Resette lokale Aenderungen..."
+            git checkout -- $DIRTY_FILES
+            git pull || { echo -e "\033[0;31m[Remote]\033[0m Git pull fehlgeschlagen"; exit 1; }
+        else
+            echo -e "\033[0;31m[Remote]\033[0m Git pull abgebrochen."; exit 1
+        fi
     fi
 fi
 
