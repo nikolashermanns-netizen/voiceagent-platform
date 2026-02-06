@@ -386,6 +386,24 @@ async def on_transcript(role: str, text: str, is_final: bool):
         if agent_manager and agent_manager.active_agent_name == "security_agent":
             await _start_security_timeout()  # Reset: neuer 15s Timer
 
+    # Bot Stop/Start: AI pausieren/fortsetzen (nicht im Security Agent)
+    if role in ("caller", "user") and is_final and text:
+        voice_client: VoiceClient = app_state["voice_client"]
+        agent_manager: AgentManager = app_state["agent_manager"]
+        text_lower = text.strip().lower()
+
+        if agent_manager and agent_manager.active_agent_name != "security_agent":
+            if ("bot stop" in text_lower or "bot stopp" in text_lower) and not voice_client.bot_paused:
+                logger.info(f"[BotPause] 'Bot stop' erkannt - pausiere Bot")
+                await voice_client.pause_bot()
+                await ws_manager.broadcast({"type": "bot_paused", "paused": True})
+                return  # Transcript nicht weiterverarbeiten
+            elif "bot start" in text_lower and voice_client.bot_paused:
+                logger.info(f"[BotPause] 'Bot start' erkannt - Bot wieder aktiv")
+                await voice_client.unpause_bot()
+                await ws_manager.broadcast({"type": "bot_paused", "paused": False})
+                return  # Transcript nicht weiterverarbeiten
+
     # Transkript an Router fuer Intent-Erkennung
     if is_final and text:
         agent_router.add_transcript(role, text)

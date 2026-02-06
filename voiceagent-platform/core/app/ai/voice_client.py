@@ -54,6 +54,7 @@ class VoiceClient:
         self._response_in_progress = False  # Finding #4: Response-Status tracken
         self._unmute_after_response = False  # Security Gate: Nach AI-Response auto-unmute
         self._text_only = False  # Security Gate: Nur Text-Modus (kein Audio-Output)
+        self._bot_paused = False  # Bot Stop/Start: AI komplett pausieren
 
         # AI State Tracking
         self._ai_state = "idle"
@@ -92,6 +93,34 @@ class VoiceClient:
             return True
         logger.warning(f"Unbekanntes Modell: {model}")
         return False
+
+    @property
+    def bot_paused(self) -> bool:
+        """Ist der Bot pausiert (Bot Stop aktiv)?"""
+        return self._bot_paused
+
+    async def pause_bot(self):
+        """Pausiert den Bot: Audio muten, laufende Response canceln."""
+        self._bot_paused = True
+        self.muted = True
+        logger.info("[BotPause] Bot pausiert - Audio und Responses gestoppt")
+
+        # Laufende Response abbrechen
+        if self._ws and self._running and self._response_in_progress:
+            try:
+                await self._ws.send_str(json.dumps({"type": "response.cancel"}))
+                logger.info("[BotPause] Laufende Response gecancelt")
+            except Exception as e:
+                logger.warning(f"[BotPause] Cancel fehlgeschlagen: {e}")
+
+        await self._set_ai_state("paused")
+
+    async def unpause_bot(self):
+        """Hebt die Bot-Pause auf: Audio unmuten, AI hoert wieder zu."""
+        self._bot_paused = False
+        self.muted = False
+        logger.info("[BotPause] Bot wieder aktiv")
+        await self._set_ai_state("listening")
 
     async def switch_model_live(self, model: str) -> bool:
         """
@@ -343,6 +372,15 @@ class VoiceClient:
             self._response_in_progress = True
             self._current_response_has_audio = False
 
+            # Bot Pause: Jede neue Response sofort abbrechen
+            if self._bot_paused:
+                try:
+                    await self._ws.send_str(json.dumps({"type": "response.cancel"}))
+                    logger.info("[BotPause] Response automatisch gecancelt")
+                except Exception as e:
+                    logger.warning(f"[BotPause] Auto-Cancel fehlgeschlagen: {e}")
+                return
+
         elif event_type == "response.done":
             self._response_in_progress = False
             # Security Gate: Auto-unmute nach stummer AI-Response
@@ -592,6 +630,7 @@ class VoiceClient:
         self._sent_audio_count = 0
         self._response_in_progress = False
         self._unmute_after_response = False
+        self._bot_paused = False
         self._current_response_has_audio = False
         await self._set_ai_state("idle")
 
