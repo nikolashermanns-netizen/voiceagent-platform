@@ -130,6 +130,16 @@
         return new Date().toTimeString().substring(0, 8);
     }
 
+    function parseCallerId(raw) {
+        if (!raw) return 'Unbekannt';
+        // "015901969502" <sip:015901969502@...> -> 015901969502
+        var m = raw.match(/"([^"]+)"/);
+        if (m) return m[1];
+        m = raw.match(/sip:([^@]+)@/);
+        if (m) return m[1];
+        return raw;
+    }
+
     function autoScroll(el) {
         if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
             el.scrollTop = el.scrollHeight;
@@ -903,7 +913,7 @@
                     '<div class="call-history-item__main" data-call-id="' + escAttr(call.id || '') + '">' +
                         '<span class="call-history-item__index">#' + idx + '</span>' +
                         '<div class="call-history-item__info">' +
-                            '<span class="call-history-item__number">' + esc(call.caller_id || '') + '</span>' +
+                            '<span class="call-history-item__number">' + esc(parseCallerId(call.caller_id)) + '</span>' +
                             '<span class="call-history-item__meta">' + esc(date) +
                             ' — ' + esc(durStr) + ' — ' + esc(costStr) + '</span>' +
                         '</div>' +
@@ -1078,7 +1088,7 @@
                 var html =
                     '<div class="call-detail">' +
                         '<div class="call-detail__header">' +
-                            '<h3>Anruf #' + esc(String(idx)) + ' — ' + esc(call.caller_id || '') + '</h3>' +
+                            '<h3>Anruf #' + esc(String(idx)) + ' — ' + esc(parseCallerId(call.caller_id)) + '</h3>' +
                             '<button class="btn btn--small btn--ghost call-detail__close">&#10005;</button>' +
                         '</div>' +
                         '<div class="call-detail__meta">' + esc(date) + ' — ' + esc(durStr) + ' — ' + esc(costStr) + '</div>' +

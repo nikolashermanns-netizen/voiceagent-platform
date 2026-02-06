@@ -348,8 +348,20 @@ REMOTE_SCRIPT
 # Live-Logs
 logs() {
     check_ssh
+    if [ -n "$2" ]; then
+        call_logs "$2"
+        return
+    fi
     log "Zeige Live-Logs von '$SSH_HOST'..."
     ssh "$SSH_HOST" "cd $REMOTE_DIR/voiceagent-platform && if docker compose version &>/dev/null; then docker compose logs -f --tail=100; else docker-compose logs -f --tail=100; fi"
+}
+
+# Call-Logs: Zeigt gespeicherte Logs fuer einen bestimmten Call (nach Index)
+call_logs() {
+    local CALL_NUM="$1"
+    log "Lade Logs fuer Call #${CALL_NUM} von '$SSH_HOST'..."
+
+    ssh "$SSH_HOST" "docker exec voiceagent-core python3 /app/core/app/call_logs.py ${CALL_NUM}"
 }
 
 # Status
@@ -378,7 +390,7 @@ open_ssh() {
 case "${1:-setup}" in
     setup)   setup ;;
     update)  update ;;
-    logs)    logs ;;
+    logs)    logs "$@" ;;
     status)  status ;;
     stop)    stop ;;
     ssh)     open_ssh ;;
@@ -390,6 +402,7 @@ case "${1:-setup}" in
         echo "  setup    - Komplett-Setup (Docker, Git, Build, Start)"
         echo "  update   - Git pull + rebuild + restart"
         echo "  logs     - Live-Logs anzeigen"
+        echo "  logs N   - Transcript + Logs fuer Call #N anzeigen"
         echo "  status   - Service-Status"
         echo "  stop     - Services stoppen"
         echo "  ssh      - SSH-Session oeffnen"

@@ -319,7 +319,11 @@ class VoiceClient:
         except Exception as e:
             logger.error(f"Receive Loop Fehler: {e}")
         finally:
-            self._running = False
+            # Nur _running=False setzen wenn WIR der aktive Receive-Loop sind.
+            # Bei Model-Switch wurde bereits ein neuer Loop gestartet -
+            # der alte darf _running nicht auf False setzen.
+            if self._receive_task is asyncio.current_task():
+                self._running = False
 
     async def _handle_event(self, event: dict):
         """Verarbeitet ein Event von der API."""

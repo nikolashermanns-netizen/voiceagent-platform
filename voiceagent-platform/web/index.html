@@ -72,7 +72,7 @@
                 <button class="tabs__tab tabs__tab--active" role="tab" data-tab="tasks" aria-selected="true">Tasks</button>
                 <button class="tabs__tab" role="tab" data-tab="coding" aria-selected="false">Coding</button>
                 <button class="tabs__tab" role="tab" data-tab="ideen" aria-selected="false">Ideen</button>
-                <button class="tabs__tab" role="tab" data-tab="blacklist" aria-selected="false">Black/White List</button>
+                <button class="tabs__tab" role="tab" data-tab="blacklist" aria-selected="false">Telefonate</button>
                 <button class="tabs__tab" role="tab" data-tab="agenten" aria-selected="false">Agenten</button>
                 <button class="tabs__tab" role="tab" data-tab="debug" aria-selected="false">Debug</button>
             </nav>
@@ -120,16 +120,20 @@
                 </div>
             </div>
 
-            <!-- Black/White List -->
+            <!-- Telefonate -->
             <div class="tabs__content" id="tab-blacklist" role="tabpanel" data-tab="blacklist">
                 <!-- Aktuellen Anrufer hinzufuegen -->
                 <div class="caller-actions" id="caller-actions" style="display: none;">
                     <span class="caller-actions__label">Anrufer: <strong id="caller-actions-number"></strong></span>
-                    <button class="btn btn--small btn--danger" id="btn-add-blacklist">Zur Blacklist</button>
-                    <button class="btn btn--small btn--success" id="btn-add-whitelist">Zur Whitelist</button>
+                    <button class="btn btn--small btn--danger" id="btn-add-blacklist">Blacklist</button>
+                    <button class="btn btn--small btn--success" id="btn-add-whitelist">Whitelist</button>
                 </div>
 
-                <h3 class="section-title">Gesperrte Nummern (Blacklist)</h3>
+                <div id="call-history-list">
+                    <div class="empty-state">Keine Anrufe</div>
+                </div>
+
+                <h3 class="section-title" style="margin-top: var(--space-lg);">Gesperrte Nummern (Blacklist)</h3>
                 <div id="blacklist-list">
                     <div class="empty-state">Keine gesperrten Nummern</div>
                 </div>
@@ -137,11 +141,6 @@
                 <h3 class="section-title" style="margin-top: var(--space-lg);">Freigeschaltete Nummern (Whitelist)</h3>
                 <div id="whitelist-list">
                     <div class="empty-state">Keine freigeschalteten Nummern</div>
-                </div>
-
-                <h3 class="section-title" style="margin-top: var(--space-lg);">Vergangene Anrufe</h3>
-                <div id="call-history-list">
-                    <div class="empty-state">Keine Anrufe</div>
                 </div>
             </div>
 
@@ -188,8 +187,8 @@
             <span class="bottom-nav__label">Tasks</span>
         </button>
         <button class="bottom-nav__item" data-tab="blacklist">
-            <span class="bottom-nav__icon">&#128274;</span>
-            <span class="bottom-nav__label">B/W List</span>
+            <span class="bottom-nav__icon">&#128222;</span>
+            <span class="bottom-nav__label">Telefonate</span>
         </button>
         <button class="bottom-nav__item" data-tab="debug">
             <span class="bottom-nav__icon">&#128736;</span>

@@ -27,7 +27,50 @@
 - Blacklist-Check erfolgt in `on_incoming_call()` VOR dem Security Agent
 - Blacklisted Nummern werden sofort abgelehnt (reject_call 403)
 - Blacklist-Verwaltung: `core/app/blacklist/store.py`, API: GET/DELETE `/blacklist`
-- Web-Dashboard hat einen "Blacklist" Tab mit Entfernen-Button (X)
+- Whitelist: Nummern auf der Whitelist ueberspringen den Security-Code komplett
+  - Check in `on_incoming_call()`: wenn whitelisted -> direkt `switch_agent("main_agent")` + `set_call_unlocked(True)`
+  - API: GET/POST/DELETE `/whitelist`
+- Blacklist-Entfernung loescht auch `failed_unlock_calls` Records der Nummer
+
+## Telefonate-Tab (Web-Dashboard)
+- Tab "Telefonate" im Web-Dashboard zeigt: Anruf-Historie, Blacklist, Whitelist
+- **Anruf-Historie**: Alle Anrufe mit Dauer, Kosten, Caller-ID, Zeitstempel
+  - Klick auf Anruf oeffnet Overlay mit Tabs: Transkript + Logs
+  - Transkript: JSON-Array aus `{role, text}` Eintraegen
+  - Logs: Kompletter Python-Application-Log waehrend des Anrufs
+- **Per-Call Log Capture**: `CallLogHandler` (custom `logging.Handler`) in `main.py`
+  - Wird bei `on_incoming_call()` an Root-Logger angehaengt
+  - Sammelt ALLE Log-Eintraege waehrend des Anrufs
+  - Bei `on_call_ended()`: Logs in DB gespeichert, Handler entfernt
+- **Caller-ID Parsing**: SIP-Format `"015901969502" <sip:015901969502@domain>` -> `015901969502`
+  - `parseCallerId()` Helper in `app.js`
+- **Buttons "Blacklist"/"Whitelist"**: Aktuellen Anrufer direkt hinzufuegen (nur bei aktivem Anruf)
+
+## Datenbank
+- SQLite mit aiosqlite, WAL mode
+- Schema in `core/app/db/database.py`
+- **Auto-Migration**: `_migrate_columns()` prueft beim Start ob Spalten fehlen und fuegt sie via ALTER TABLE hinzu
+  - Notwendig weil `CREATE TABLE IF NOT EXISTS` bestehende Tabellen nicht aendert
+  - Migrationen als Liste: `[(table, column, type), ...]`
+- Tabellen: `calls`, `tasks`, `ideas`, `blacklist`, `whitelist`, `failed_unlock_calls`
+- `calls` Tabelle: id, caller_id, started_at, ended_at, duration_seconds, cost_cents, transcript (JSON), logs (TEXT)
+
+## Model Switching
+- Zwei Modelle: MODEL_MINI (gpt-4o-mini-realtime) und MODEL_PREMIUM (gpt-4o-realtime)
+- Default: Mini (guenstig). User kann per Sprache wechseln: "model premium/thinking" oder "model mini/guenstig"
+- Model ist in WebSocket-URL -> Wechsel erfordert Disconnect+Reconnect
+- `switch_model_live()` in `voice_client.py`
+- `preferred_model` Property auf BaseAgent: ideas_agent="premium", security_agent="mini"
+- Agents ohne preferred_model bekommen `_MODEL_WECHSELN_TOOL` von AgentManager injiziert
+- Delta-basiertes Cost-Tracking: pro-Response Tokens × aktueller Model-Preis
+
+## Server / Deployment
+- SSH-Alias: `ssh bot`, Server-Pfad: `/opt/voiceagent-platform`
+- Deploy: `update_server.sh` (setup|update|logs|status|stop|ssh)
+  - `logs` - Live Docker-Logs
+  - `logs N` - Transcript + Debug-Logs fuer Call #N (via `call_logs.py` im Container)
+- Docker mit `network_mode: host`, `privileged: true`
+- **WICHTIG: Niemals `git push` machen! Der User pusht selbst.**
 
 ## Konventionen
 - Code-Kommentare und Docstrings auf Deutsch
