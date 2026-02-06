@@ -118,7 +118,11 @@ class SecurityAgent(BaseAgent):
         if not code:
             return "__BEEP__"
 
-        if code == _UNLOCK_CODE:
+        # Nur Ziffern extrahieren - AI kann "7 2 3 4", "7234" oder aehnliches senden
+        digits = ''.join(c for c in code if c.isdigit())
+        logger.info(f"[SecurityAgent] Code empfangen: '{code}' -> Digits: '{digits}'")
+
+        if digits == _UNLOCK_CODE:
             logger.info("[SecurityAgent] Entsperr-Code KORREKT - Zugang gewaehrt")
             return "__SWITCH__:main_agent"
         else:
