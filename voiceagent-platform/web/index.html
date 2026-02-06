@@ -13,24 +13,30 @@
             <h1 class="header__title">VoiceAgent</h1>
         </div>
 
-        <div class="header__status-group">
-            <div class="status-badge" id="sip-status">
-                <span class="status-badge__dot"></span>
-                <span class="status-badge__label">SIP: Offline</span>
-            </div>
-            <div class="status-badge" id="call-status">
-                <span class="status-badge__dot"></span>
-                <span class="status-badge__label">Kein Anruf</span>
-            </div>
-        </div>
+        <button class="header__menu-toggle" id="btn-menu-toggle" aria-label="Menu">
+            <span></span><span></span><span></span>
+        </button>
 
-        <div class="header__controls">
-            <div class="header__agent-select">
-                <label for="agent-select">Agent:</label>
-                <select id="agent-select" class="select"></select>
+        <div class="header__collapsible" id="header-collapsible">
+            <div class="header__status-group">
+                <div class="status-badge" id="sip-status">
+                    <span class="status-badge__dot"></span>
+                    <span class="status-badge__label">SIP: Offline</span>
+                </div>
+                <div class="status-badge" id="call-status">
+                    <span class="status-badge__dot"></span>
+                    <span class="status-badge__label">Kein Anruf</span>
+                </div>
             </div>
-            <button id="btn-mute" class="btn btn--secondary" disabled>Stumm</button>
-            <button id="btn-hangup" class="btn btn--danger" disabled>Auflegen</button>
+
+            <div class="header__controls">
+                <div class="header__agent-select">
+                    <label for="agent-select">Agent:</label>
+                    <select id="agent-select" class="select"></select>
+                </div>
+                <button id="btn-mute" class="btn btn--secondary" disabled>Stumm</button>
+                <button id="btn-hangup" class="btn btn--danger" disabled>Auflegen</button>
+            </div>
         </div>
 
         <div id="ws-status">
@@ -52,6 +58,7 @@
         <!-- Tabs -->
         <section class="panel panel--tabs">
             <nav class="tabs__nav" role="tablist">
+                <button class="tabs__tab" role="tab" data-tab="live" aria-selected="false">Live</button>
                 <button class="tabs__tab tabs__tab--active" role="tab" data-tab="tasks" aria-selected="true">Tasks</button>
                 <button class="tabs__tab" role="tab" data-tab="coding" aria-selected="false">Coding</button>
                 <button class="tabs__tab" role="tab" data-tab="ideen" aria-selected="false">Ideen</button>
@@ -59,6 +66,29 @@
                 <button class="tabs__tab" role="tab" data-tab="agenten" aria-selected="false">Agenten</button>
                 <button class="tabs__tab" role="tab" data-tab="debug" aria-selected="false">Debug</button>
             </nav>
+
+            <!-- Live (Mobile: Transcript + Coding + Ideen kombiniert) -->
+            <div class="tabs__content" id="tab-live" role="tabpanel" data-tab="live">
+                <div class="live-feed" id="live-feed">
+                    <div class="live-feed__section live-feed__section--coding" id="live-coding-compact">
+                        <div class="live-feed__section-header">
+                            <span class="live-feed__section-icon coding-panel__indicator"></span>
+                            <span class="live-feed__section-title">Coding</span>
+                            <span class="live-feed__section-status" id="live-coding-status">Bereit</span>
+                        </div>
+                        <div class="live-feed__section-body" id="live-coding-body" style="display:none;"></div>
+                    </div>
+                    <div class="live-feed__section live-feed__section--ideas" id="live-ideas-compact">
+                        <div class="live-feed__section-header">
+                            <span class="live-feed__section-icon">&#128161;</span>
+                            <span class="live-feed__section-title">Ideen</span>
+                            <span class="live-feed__section-status" id="live-ideas-count">0</span>
+                        </div>
+                        <div class="live-feed__section-body" id="live-ideas-body" style="display:none;"></div>
+                    </div>
+                    <div class="live-feed__transcript" id="live-transcript"></div>
+                </div>
+            </div>
 
             <!-- Tasks -->
             <div class="tabs__content tabs__content--active" id="tab-tasks" role="tabpanel" data-tab="tasks">
@@ -129,6 +159,30 @@
             </div>
         </section>
     </main>
+
+    <!-- Bottom Navigation (Mobile) -->
+    <nav class="bottom-nav" id="bottom-nav">
+        <button class="bottom-nav__item bottom-nav__item--active" data-tab="live">
+            <span class="bottom-nav__icon">&#9679;</span>
+            <span class="bottom-nav__label">Live</span>
+        </button>
+        <button class="bottom-nav__item" data-tab="tasks">
+            <span class="bottom-nav__icon">&#9776;</span>
+            <span class="bottom-nav__label">Tasks</span>
+        </button>
+        <button class="bottom-nav__item" data-tab="blacklist">
+            <span class="bottom-nav__icon">&#128683;</span>
+            <span class="bottom-nav__label">Blacklist</span>
+        </button>
+        <button class="bottom-nav__item" data-tab="agenten">
+            <span class="bottom-nav__icon">&#129302;</span>
+            <span class="bottom-nav__label">Agenten</span>
+        </button>
+        <button class="bottom-nav__item" data-tab="debug">
+            <span class="bottom-nav__icon">&#128736;</span>
+            <span class="bottom-nav__label">Debug</span>
+        </button>
+    </nav>
 
     <!-- Statusbar -->
     <footer class="statusbar">
