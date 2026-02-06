@@ -348,8 +348,8 @@ body {
     border-bottom-color: var(--color-primary);
 }
 
-/* Live tab hidden on desktop */
-.tabs__tab[data-tab="live"] { display: none; }
+/* Transkript tab hidden on desktop (transcript has its own panel) */
+.tabs__tab[data-tab="transkript"] { display: none; }
 
 .tabs__content {
     display: none;
@@ -783,77 +783,15 @@ body {
     white-space: nowrap;
 }
 
-/* === Live Feed (Mobile combined view) === */
-.live-feed {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    overflow: hidden;
-}
-
-.live-feed__section {
-    flex-shrink: 0;
-    border-bottom: 1px solid var(--color-border);
-}
-
-.live-feed__section-header {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    padding: var(--space-sm) var(--space-md);
-    cursor: pointer;
-    min-height: 44px;
-}
-
-.live-feed__section-title {
-    font-weight: 600;
-    font-size: var(--font-size-sm);
-    flex: 1;
-}
-
-.live-feed__section-icon {
-    flex-shrink: 0;
-}
-
-.live-feed__section-status {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
-    padding: 2px var(--space-sm);
-    background: var(--color-bg-overlay);
-    border-radius: var(--radius-sm);
-}
-
-.live-feed__section-body {
-    padding: 0 var(--space-md) var(--space-sm);
-    font-size: var(--font-size-sm);
-    font-family: var(--font-mono);
-    color: var(--ctp-subtext0);
-    line-height: 1.5;
-}
-
-.live-feed__section--coding .live-feed__section-header {
-    border-left: 3px solid var(--ctp-blue);
-}
-
-.live-feed__section--ideas .live-feed__section-header {
-    border-left: 3px solid var(--ctp-yellow);
-}
-
-.live-feed__transcript {
+/* === Mobile Transcript (tab view) === */
+.mobile-transcript {
     flex: 1;
     overflow-y: auto;
     padding: var(--space-md);
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     line-height: 1.6;
-}
-
-.live-feed__idea-item {
-    padding: var(--space-xs) 0;
-    border-bottom: 1px solid var(--color-border);
-}
-.live-feed__idea-item:last-child {
-    border-bottom: none;
+    -webkit-overflow-scrolling: touch;
 }
 
 /* === Scrollbar === */
@@ -957,10 +895,8 @@ body {
         display: flex;
     }
 
-    /* Show Live tab, hide Coding/Ideen standalone tabs on mobile */
-    .tabs__tab[data-tab="live"] { display: block; }
-    .tabs__tab[data-tab="coding"],
-    .tabs__tab[data-tab="ideen"] { display: none; }
+    /* Show Transkript tab on mobile */
+    .tabs__tab[data-tab="transkript"] { display: block; }
 
     /* Hide footer on mobile */
     .statusbar {
@@ -983,10 +919,6 @@ body {
         height: 100%;
     }
 
-    /* Live feed transcript padding for mobile */
-    .live-feed__transcript {
-        -webkit-overflow-scrolling: touch;
-    }
 }
 
 @media (max-width: 600px) {

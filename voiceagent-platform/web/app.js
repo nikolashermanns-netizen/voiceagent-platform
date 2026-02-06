@@ -90,16 +90,11 @@
         DOM.statusbarText  = document.getElementById('statusbar-text');
 
         // Mobile elements
-        DOM.btnMenuToggle     = document.getElementById('btn-menu-toggle');
-        DOM.headerCollapsible = document.getElementById('header-collapsible');
-        DOM.bottomNav         = document.getElementById('bottom-nav');
-        DOM.bottomNavItems    = document.querySelectorAll('.bottom-nav__item');
-        DOM.liveTranscript    = document.getElementById('live-transcript');
-        DOM.liveCodingCompact = document.getElementById('live-coding-compact');
-        DOM.liveCodingBody    = document.getElementById('live-coding-body');
-        DOM.liveCodingStatus  = document.getElementById('live-coding-status');
-        DOM.liveIdeasBody     = document.getElementById('live-ideas-body');
-        DOM.liveIdeasCount    = document.getElementById('live-ideas-count');
+        DOM.btnMenuToggle      = document.getElementById('btn-menu-toggle');
+        DOM.headerCollapsible  = document.getElementById('header-collapsible');
+        DOM.bottomNav          = document.getElementById('bottom-nav');
+        DOM.bottomNavItems     = document.querySelectorAll('.bottom-nav__item');
+        DOM.mobileTranscript   = document.getElementById('mobile-transcript');
     }
 
     // ============================================
@@ -141,13 +136,13 @@
         DOM.transcript.appendChild(div1);
         autoScroll(DOM.transcript);
 
-        // Mobile live-feed transcript
-        if (DOM.liveTranscript) {
+        // Mobile transcript tab
+        if (DOM.mobileTranscript) {
             var div2 = document.createElement('div');
             div2.className = 'transcript__line transcript__line--' + cls;
             div2.innerHTML = html;
-            DOM.liveTranscript.appendChild(div2);
-            autoScroll(DOM.liveTranscript);
+            DOM.mobileTranscript.appendChild(div2);
+            autoScroll(DOM.mobileTranscript);
         }
     }
 
@@ -530,23 +525,6 @@
                 DOM.codingTools.appendChild(span);
             });
 
-            // Update compact live-feed coding section
-            if (DOM.liveCodingStatus) {
-                DOM.liveCodingStatus.textContent = label[progress.status] || progress.status;
-
-                var liveInd = DOM.liveCodingCompact.querySelector('.coding-panel__indicator');
-                if (liveInd) {
-                    liveInd.className = 'live-feed__section-icon coding-panel__indicator';
-                    if (progress.status !== 'idle') {
-                        liveInd.classList.add('coding-panel__indicator--' + progress.status);
-                    }
-                }
-
-                if (progress.status !== 'idle' && progress.currentAction) {
-                    DOM.liveCodingBody.style.display = 'block';
-                    DOM.liveCodingBody.textContent = progress.currentAction;
-                }
-            }
         },
 
         updateAgentsPanel: function (agents, activeAgent) {
@@ -572,7 +550,6 @@
 
             if ((!ideas || ideas.length === 0) && (!projects || projects.length === 0)) {
                 DOM.ideasList.innerHTML = '<div class="empty-state">Keine Ideen</div>';
-                updateLiveIdeas(ideas);
                 return;
             }
 
@@ -775,34 +752,6 @@
     };
 
     // ============================================
-    // LIVE FEED HELPERS
-    // ============================================
-    function updateLiveIdeas(ideas) {
-        if (!DOM.liveIdeasCount) return;
-
-        var activeIdeas = (ideas || []).filter(function (i) { return i.status !== 'archived'; });
-        DOM.liveIdeasCount.textContent = activeIdeas.length;
-
-        if (DOM.liveIdeasBody) {
-            DOM.liveIdeasBody.innerHTML = '';
-            var recent = activeIdeas.slice(0, 3);
-            if (recent.length > 0) {
-                DOM.liveIdeasBody.style.display = 'block';
-                recent.forEach(function (idea) {
-                    var d = document.createElement('div');
-                    d.className = 'live-feed__idea-item';
-                    d.innerHTML = '<strong>' + esc(idea.title) + '</strong> ' +
-                        '<span style="color:var(--ctp-subtext0)">' +
-                        esc((idea.description || '').substring(0, 60)) + '</span>';
-                    DOM.liveIdeasBody.appendChild(d);
-                });
-            } else {
-                DOM.liveIdeasBody.style.display = 'none';
-            }
-        }
-    }
-
-    // ============================================
     // REST API
     // ============================================
     function fetchAgentsInfo() {
@@ -967,21 +916,6 @@
     }
 
     // ============================================
-    // LIVE FEED SECTIONS (accordion)
-    // ============================================
-    function initLiveFeedSections() {
-        var sections = document.querySelectorAll('.live-feed__section-header');
-        sections.forEach(function (header) {
-            header.addEventListener('click', function () {
-                var body = this.parentElement.querySelector('.live-feed__section-body');
-                if (body) {
-                    body.style.display = body.style.display === 'none' ? 'block' : 'none';
-                }
-            });
-        });
-    }
-
-    // ============================================
     // VIEWPORT RESIZE HANDLER
     // ============================================
     function handleResize() {
@@ -990,7 +924,7 @@
 
         if (Mobile.isMobile && !wasMobile) {
             // Switched to mobile: activate Live tab
-            switchTab('live');
+            switchTab('transkript');
         } else if (!Mobile.isMobile && wasMobile) {
             // Switched to desktop: activate Tasks tab (default)
             switchTab('tasks');
@@ -1035,8 +969,8 @@
 
         DOM.btnClearTranscript.addEventListener('click', function () {
             DOM.transcript.innerHTML = '';
-            if (DOM.liveTranscript) {
-                DOM.liveTranscript.innerHTML = '';
+            if (DOM.mobileTranscript) {
+                DOM.mobileTranscript.innerHTML = '';
             }
         });
 
@@ -1068,13 +1002,12 @@
         initTabs();
         initBottomNav();
         initHamburger();
-        initLiveFeedSections();
         bindEvents();
         WS.connect();
 
         // Set initial tab based on viewport
         if (Mobile.isMobile) {
-            switchTab('live');
+            switchTab('transkript');
         }
 
         window.addEventListener('resize', handleResize);

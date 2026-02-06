@@ -58,7 +58,7 @@
         <!-- Tabs -->
         <section class="panel panel--tabs">
             <nav class="tabs__nav" role="tablist">
-                <button class="tabs__tab" role="tab" data-tab="live" aria-selected="false">Live</button>
+                <button class="tabs__tab" role="tab" data-tab="transkript" aria-selected="false">Transkript</button>
                 <button class="tabs__tab tabs__tab--active" role="tab" data-tab="tasks" aria-selected="true">Tasks</button>
                 <button class="tabs__tab" role="tab" data-tab="coding" aria-selected="false">Coding</button>
                 <button class="tabs__tab" role="tab" data-tab="ideen" aria-selected="false">Ideen</button>
@@ -67,27 +67,9 @@
                 <button class="tabs__tab" role="tab" data-tab="debug" aria-selected="false">Debug</button>
             </nav>
 
-            <!-- Live (Mobile: Transcript + Coding + Ideen kombiniert) -->
-            <div class="tabs__content" id="tab-live" role="tabpanel" data-tab="live">
-                <div class="live-feed" id="live-feed">
-                    <div class="live-feed__section live-feed__section--coding" id="live-coding-compact">
-                        <div class="live-feed__section-header">
-                            <span class="live-feed__section-icon coding-panel__indicator"></span>
-                            <span class="live-feed__section-title">Coding</span>
-                            <span class="live-feed__section-status" id="live-coding-status">Bereit</span>
-                        </div>
-                        <div class="live-feed__section-body" id="live-coding-body" style="display:none;"></div>
-                    </div>
-                    <div class="live-feed__section live-feed__section--ideas" id="live-ideas-compact">
-                        <div class="live-feed__section-header">
-                            <span class="live-feed__section-icon">&#128161;</span>
-                            <span class="live-feed__section-title">Ideen</span>
-                            <span class="live-feed__section-status" id="live-ideas-count">0</span>
-                        </div>
-                        <div class="live-feed__section-body" id="live-ideas-body" style="display:none;"></div>
-                    </div>
-                    <div class="live-feed__transcript" id="live-transcript"></div>
-                </div>
+            <!-- Transkript (Mobile: eigenstaendiger Tab) -->
+            <div class="tabs__content" id="tab-transkript" role="tabpanel" data-tab="transkript">
+                <div class="mobile-transcript" id="mobile-transcript"></div>
             </div>
 
             <!-- Tasks -->
@@ -162,21 +144,21 @@
 
     <!-- Bottom Navigation (Mobile) -->
     <nav class="bottom-nav" id="bottom-nav">
-        <button class="bottom-nav__item bottom-nav__item--active" data-tab="live">
+        <button class="bottom-nav__item bottom-nav__item--active" data-tab="transkript">
             <span class="bottom-nav__icon">&#9679;</span>
-            <span class="bottom-nav__label">Live</span>
+            <span class="bottom-nav__label">Transkript</span>
+        </button>
+        <button class="bottom-nav__item" data-tab="coding">
+            <span class="bottom-nav__icon">&#128187;</span>
+            <span class="bottom-nav__label">Coding</span>
+        </button>
+        <button class="bottom-nav__item" data-tab="ideen">
+            <span class="bottom-nav__icon">&#128161;</span>
+            <span class="bottom-nav__label">Ideen</span>
         </button>
         <button class="bottom-nav__item" data-tab="tasks">
             <span class="bottom-nav__icon">&#9776;</span>
             <span class="bottom-nav__label">Tasks</span>
-        </button>
-        <button class="bottom-nav__item" data-tab="blacklist">
-            <span class="bottom-nav__icon">&#128683;</span>
-            <span class="bottom-nav__label">Blacklist</span>
-        </button>
-        <button class="bottom-nav__item" data-tab="agenten">
-            <span class="bottom-nav__icon">&#129302;</span>
-            <span class="bottom-nav__label">Agenten</span>
         </button>
         <button class="bottom-nav__item" data-tab="debug">
             <span class="bottom-nav__icon">&#128736;</span>
