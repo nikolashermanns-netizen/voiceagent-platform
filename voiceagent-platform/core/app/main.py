@@ -62,6 +62,32 @@ _call_transcript = []
 _call_started_at = None
 
 
+# ============== Per-Call Log Capture ==============
+
+class CallLogHandler(logging.Handler):
+    """Captures all log output during a call into a list."""
+
+    def __init__(self):
+        super().__init__()
+        self.records = []
+        self.setFormatter(logging.Formatter(
+            '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+            datefmt='%H:%M:%S'
+        ))
+
+    def emit(self, record):
+        try:
+            self.records.append(self.format(record))
+        except Exception:
+            pass
+
+    def get_logs(self) -> str:
+        return '\n'.join(self.records)
+
+
+_call_log_handler: CallLogHandler = None
+
+
 # ============== OpenAI Realtime Pricing ($/1M tokens) ==============
 
 _PRICING = {
@@ -232,7 +258,7 @@ async def on_incoming_call(caller_id: str, remote_ip: str = None):
         logger.info(f"WHITELIST: Anruf von {caller_id} - Security-Code wird uebersprungen")
 
     # Reset
-    global _call_cost_usd, _last_usage, _call_transcript, _call_started_at
+    global _call_cost_usd, _last_usage, _call_transcript, _call_started_at, _call_log_handler
     _audio_stats["caller_to_ai"] = 0
     _audio_stats["ai_to_caller"] = 0
     _audio_stats["caller_bytes"] = 0
@@ -240,6 +266,11 @@ async def on_incoming_call(caller_id: str, remote_ip: str = None):
     _call_cost_usd = 0.0
     _call_transcript = []
     _call_started_at = datetime.utcnow()
+    # Per-Call Log Capture starten
+    if _call_log_handler:
+        logging.getLogger().removeHandler(_call_log_handler)
+    _call_log_handler = CallLogHandler()
+    logging.getLogger().addHandler(_call_log_handler)
     _set_model_state("mini", user_chosen=True)
     _last_usage = {
         "input_text_tokens": 0, "input_audio_tokens": 0,
@@ -585,6 +616,14 @@ async def on_call_ended(reason: str):
 
     _cancel_security_timeout()
 
+    # Per-Call Log Capture beenden
+    global _call_log_handler
+    call_logs = ''
+    if _call_log_handler:
+        call_logs = _call_log_handler.get_logs()
+        logging.getLogger().removeHandler(_call_log_handler)
+        _call_log_handler = None
+
     # Anruf-Ende in DB aufzeichnen
     db = app_state.get("db")
     call_id = app_state.pop("_current_call_id", None)
@@ -595,8 +634,8 @@ async def on_call_ended(reason: str):
         transcript_json = json.dumps(_call_transcript, ensure_ascii=False)
         await db.execute(
             """UPDATE calls SET ended_at = ?, duration_seconds = ?,
-               cost_cents = ?, transcript = ? WHERE id = ?""",
-            (now.isoformat(), duration, cost_cents, transcript_json, call_id)
+               cost_cents = ?, transcript = ?, logs = ? WHERE id = ?""",
+            (now.isoformat(), duration, cost_cents, transcript_json, call_logs, call_id)
         )
 
     await agent_manager.end_call()

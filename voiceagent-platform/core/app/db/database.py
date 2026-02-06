@@ -67,9 +67,11 @@ CREATE TABLE IF NOT EXISTS calls (
     started_at TIMESTAMP,
     ended_at TIMESTAMP,
     duration_seconds INTEGER,
+    cost_cents REAL DEFAULT 0.0,
     agents_used TEXT DEFAULT '[]',
     tasks_created TEXT DEFAULT '[]',
     transcript TEXT DEFAULT '[]',
+    logs TEXT DEFAULT '',
     summary TEXT
 );
 

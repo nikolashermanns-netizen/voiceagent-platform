@@ -325,21 +325,48 @@ def setup_routes(app_state):
 
     @router.get("/calls/history")
     async def get_call_history():
-        """Vergangene Anrufer (distinct, neueste zuerst)."""
+        """Alle Anrufe, neueste zuerst, mit laufendem Index."""
         db = app_state.get("db")
         if not db:
-            return {"entries": []}
-        entries = await db.fetch_all(
-            """SELECT caller_id,
-                      MAX(started_at) as last_call,
-                      COUNT(*) as call_count
+            return {"calls": [], "month_cost_cents": 0}
+        calls = await db.fetch_all(
+            """SELECT id, caller_id, started_at, ended_at,
+                      duration_seconds, cost_cents
                FROM calls
                WHERE caller_id IS NOT NULL
-               GROUP BY caller_id
-               ORDER BY MAX(started_at) DESC
-               LIMIT 50"""
+               ORDER BY started_at DESC
+               LIMIT 100"""
         )
-        return {"entries": entries}
+        # Laufender Index: aeltester Call = #1
+        total = await db.fetch_one("SELECT COUNT(*) as cnt FROM calls WHERE caller_id IS NOT NULL")
+        total_count = total["cnt"] if total else 0
+        for i, call in enumerate(calls):
+            call["call_index"] = total_count - i
+
+        # Monatskosten (aktueller Monat)
+        from datetime import datetime
+        now = datetime.utcnow()
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+        row = await db.fetch_one(
+            "SELECT COALESCE(SUM(cost_cents), 0) as total FROM calls WHERE started_at >= ?",
+            (month_start,)
+        )
+        month_cost = row["total"] if row else 0
+
+        return {"calls": calls, "month_cost_cents": round(month_cost, 2)}
+
+    @router.get("/calls/{call_id}")
+    async def get_call_detail(call_id: str):
+        """Einzelnen Anruf mit Transcript abrufen."""
+        db = app_state.get("db")
+        if not db:
+            raise HTTPException(status_code=500, detail="DB nicht verfuegbar")
+        call = await db.fetch_one(
+            "SELECT * FROM calls WHERE id = ?", (call_id,)
+        )
+        if not call:
+            raise HTTPException(status_code=404, detail="Anruf nicht gefunden")
+        return call
 
     # ============== Blacklist ==============
 

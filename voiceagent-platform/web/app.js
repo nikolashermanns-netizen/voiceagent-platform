@@ -866,29 +866,51 @@
             });
         },
 
-        updateCallHistory: function (entries) {
+        updateCallHistory: function (calls, monthCostCents) {
             DOM.callHistoryList.innerHTML = '';
-            if (!entries || entries.length === 0) {
-                DOM.callHistoryList.innerHTML = '<div class="empty-state">Keine Anrufe</div>';
+
+            // Monatskosten-Anzeige
+            var costHtml = '<div class="call-history-month-cost">Kosten diesen Monat: <strong>';
+            if (monthCostCents >= 100) {
+                costHtml += (monthCostCents / 100).toFixed(2) + ' EUR';
+            } else {
+                costHtml += monthCostCents.toFixed(2) + ' ct';
+            }
+            costHtml += '</strong></div>';
+            DOM.callHistoryList.insertAdjacentHTML('beforeend', costHtml);
+
+            if (!calls || calls.length === 0) {
+                DOM.callHistoryList.insertAdjacentHTML('beforeend', '<div class="empty-state">Keine Anrufe</div>');
                 return;
             }
 
-            entries.forEach(function (entry) {
+            calls.forEach(function (call) {
                 var div = document.createElement('div');
                 div.className = 'call-history-item';
 
-                var date = entry.last_call ? new Date(entry.last_call).toLocaleString('de-DE') : '';
-                var count = entry.call_count || 1;
+                var date = call.started_at ? new Date(call.started_at).toLocaleString('de-DE') : '';
+                var dur = call.duration_seconds || 0;
+                var durStr = dur >= 60
+                    ? Math.floor(dur / 60) + ':' + ('0' + (dur % 60)).slice(-2) + ' min'
+                    : dur + 's';
+                var cost = call.cost_cents || 0;
+                var costStr = cost >= 100
+                    ? (cost / 100).toFixed(2) + ' EUR'
+                    : cost.toFixed(2) + ' ct';
+                var idx = call.call_index || '';
 
                 div.innerHTML =
-                    '<div class="call-history-item__info">' +
-                        '<span class="call-history-item__number">' + esc(entry.caller_id || '') + '</span>' +
-                        '<span class="call-history-item__meta">' + esc(date) +
-                        (count > 1 ? ' — ' + count + ' Anrufe' : '') + '</span>' +
+                    '<div class="call-history-item__main" data-call-id="' + escAttr(call.id || '') + '">' +
+                        '<span class="call-history-item__index">#' + idx + '</span>' +
+                        '<div class="call-history-item__info">' +
+                            '<span class="call-history-item__number">' + esc(call.caller_id || '') + '</span>' +
+                            '<span class="call-history-item__meta">' + esc(date) +
+                            ' — ' + esc(durStr) + ' — ' + esc(costStr) + '</span>' +
+                        '</div>' +
                     '</div>' +
                     '<div class="call-history-item__actions">' +
-                        '<button class="btn btn--small btn--danger" data-history-blacklist="' + escAttr(entry.caller_id || '') + '" title="Zur Blacklist">B</button>' +
-                        '<button class="btn btn--small btn--success" data-history-whitelist="' + escAttr(entry.caller_id || '') + '" title="Zur Whitelist">W</button>' +
+                        '<button class="btn btn--small btn--danger" data-history-blacklist="' + escAttr(call.caller_id || '') + '" title="Zur Blacklist">B</button>' +
+                        '<button class="btn btn--small btn--success" data-history-whitelist="' + escAttr(call.caller_id || '') + '" title="Zur Whitelist">W</button>' +
                     '</div>';
 
                 DOM.callHistoryList.appendChild(div);
@@ -1006,9 +1028,98 @@
         fetch('/calls/history')
             .then(function (r) { return r.json(); })
             .then(function (data) {
-                UI.updateCallHistory(data.entries || []);
+                UI.updateCallHistory(data.calls || [], data.month_cost_cents || 0);
             })
             .catch(function (e) { addDebug('[API] Call History: ' + e.message); });
+    }
+
+    function showCallTranscript(callId) {
+        fetch('/calls/' + encodeURIComponent(callId))
+            .then(function (r) { return r.json(); })
+            .then(function (call) {
+                var transcript = [];
+                try { transcript = JSON.parse(call.transcript || '[]'); } catch (e) {}
+                var logs = call.logs || '';
+                var existing = document.querySelector('.call-detail-overlay');
+                if (existing) existing.remove();
+
+                var overlay = document.createElement('div');
+                overlay.className = 'call-detail-overlay';
+
+                var idx = call.call_index || '';
+                var dur = call.duration_seconds || 0;
+                var durStr = dur >= 60
+                    ? Math.floor(dur / 60) + ':' + ('0' + (dur % 60)).slice(-2) + ' min'
+                    : dur + 's';
+                var cost = call.cost_cents || 0;
+                var costStr = cost >= 100 ? (cost / 100).toFixed(2) + ' EUR' : cost.toFixed(2) + ' ct';
+                var date = call.started_at ? new Date(call.started_at).toLocaleString('de-DE') : '';
+
+                // Transcript HTML
+                var transcriptHtml = '';
+                if (transcript.length === 0) {
+                    transcriptHtml = '<div class="empty-state">Kein Transkript</div>';
+                } else {
+                    transcript.forEach(function (line) {
+                        var role = line.role || 'system';
+                        var prefix = { caller: 'Anrufer', user: 'Anrufer', assistant: 'AI', system: 'System' };
+                        var cls = role === 'user' ? 'caller' : role;
+                        transcriptHtml += '<div class="transcript__line transcript__line--' + cls + '">' +
+                            '<span class="transcript__prefix">[' + esc(prefix[role] || role) + ']</span>' +
+                            '<span class="transcript__text">' + esc(line.text || '') + '</span></div>';
+                    });
+                }
+
+                // Logs HTML
+                var logsHtml = logs
+                    ? '<pre class="call-detail__logs-content">' + esc(logs) + '</pre>'
+                    : '<div class="empty-state">Keine Logs</div>';
+
+                var html =
+                    '<div class="call-detail">' +
+                        '<div class="call-detail__header">' +
+                            '<h3>Anruf #' + esc(String(idx)) + ' — ' + esc(call.caller_id || '') + '</h3>' +
+                            '<button class="btn btn--small btn--ghost call-detail__close">&#10005;</button>' +
+                        '</div>' +
+                        '<div class="call-detail__meta">' + esc(date) + ' — ' + esc(durStr) + ' — ' + esc(costStr) + '</div>' +
+                        '<div class="call-detail__tabs">' +
+                            '<button class="call-detail__tab call-detail__tab--active" data-detail-tab="transcript">Transkript</button>' +
+                            '<button class="call-detail__tab" data-detail-tab="logs">Logs</button>' +
+                        '</div>' +
+                        '<div class="call-detail__body">' +
+                            '<div class="call-detail__panel call-detail__panel--active" data-detail-panel="transcript">' +
+                                transcriptHtml +
+                            '</div>' +
+                            '<div class="call-detail__panel" data-detail-panel="logs">' +
+                                logsHtml +
+                            '</div>' +
+                        '</div>' +
+                    '</div>';
+
+                overlay.innerHTML = html;
+
+                // Tab switching inside overlay
+                overlay.querySelectorAll('.call-detail__tab').forEach(function (tab) {
+                    tab.addEventListener('click', function () {
+                        var target = this.getAttribute('data-detail-tab');
+                        overlay.querySelectorAll('.call-detail__tab').forEach(function (t) {
+                            t.classList.toggle('call-detail__tab--active', t.getAttribute('data-detail-tab') === target);
+                        });
+                        overlay.querySelectorAll('.call-detail__panel').forEach(function (p) {
+                            p.classList.toggle('call-detail__panel--active', p.getAttribute('data-detail-panel') === target);
+                        });
+                    });
+                });
+
+                overlay.addEventListener('click', function (e) {
+                    if (e.target === overlay || e.target.closest('.call-detail__close')) {
+                        overlay.remove();
+                    }
+                });
+
+                document.body.appendChild(overlay);
+            })
+            .catch(function (e) { addDebug('[API] Call Detail: ' + e.message); });
     }
 
     function addToBlacklistFromHistory(callerId) {
@@ -1215,7 +1326,7 @@
             DOM.btnAddWhitelist.addEventListener('click', addCurrentCallerToWhitelist);
         }
 
-        // Call History: Event delegation fuer B/W Buttons
+        // Call History: Event delegation fuer B/W Buttons und Transcript-Anzeige
         DOM.callHistoryList.addEventListener('click', function (e) {
             var blBtn = e.target.closest('[data-history-blacklist]');
             if (blBtn) {
@@ -1225,6 +1336,12 @@
             var wlBtn = e.target.closest('[data-history-whitelist]');
             if (wlBtn) {
                 addToWhitelistFromHistory(wlBtn.getAttribute('data-history-whitelist'));
+                return;
+            }
+            // Klick auf Call-Zeile: Transcript anzeigen
+            var callMain = e.target.closest('[data-call-id]');
+            if (callMain) {
+                showCallTranscript(callMain.getAttribute('data-call-id'));
             }
         });
 
