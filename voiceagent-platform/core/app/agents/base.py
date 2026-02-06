@@ -46,6 +46,11 @@ class BaseAgent(ABC):
         ...
 
     @property
+    def preferred_model(self) -> Optional[str]:
+        """Bevorzugtes Modell (mini/premium). None = kein Zwang, User entscheidet."""
+        return None
+
+    @property
     def capabilities(self) -> list[str]:
         """Liste der Faehigkeiten fuer Intent-Routing."""
         return []

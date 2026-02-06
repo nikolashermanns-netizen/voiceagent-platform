@@ -110,6 +110,10 @@ class IdeasAgent(BaseAgent):
         return ["ideen", "notizen", "projekte", "brainstorming", "planung"]
 
     @property
+    def preferred_model(self) -> str:
+        return "premium"
+
+    @property
     def keywords(self) -> list[str]:
         return [
             "idee", "ideen", "einfall", "gedanke", "notiz", "notizen",

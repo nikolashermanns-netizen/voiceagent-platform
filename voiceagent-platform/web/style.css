@@ -216,6 +216,15 @@ body {
     font-variant-numeric: tabular-nums;
 }
 
+/* === Model Badge === */
+.model-badge {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+}
+.model-badge--mini .model-badge__label { color: var(--ctp-teal); }
+.model-badge--premium .model-badge__label { color: var(--ctp-mauve); }
+
 /* === Buttons === */
 .btn {
     display: inline-flex;
@@ -243,6 +252,13 @@ body {
     font-weight: 600;
 }
 .btn--danger:hover:not(:disabled) { opacity: 0.85; }
+
+.btn--success {
+    background: var(--ctp-green);
+    color: var(--ctp-base);
+    font-weight: 600;
+}
+.btn--success:hover:not(:disabled) { opacity: 0.85; }
 
 .btn--ghost {
     background: transparent;
@@ -695,6 +711,61 @@ body {
     padding: var(--space-xs);
     font-size: var(--font-size-md);
     line-height: 1;
+}
+
+/* === Whitelist === */
+.whitelist-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--color-border);
+}
+.whitelist-item__info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.whitelist-item__number {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--ctp-green);
+}
+.whitelist-item__meta {
+    font-size: var(--font-size-sm);
+    color: var(--ctp-overlay0);
+}
+.whitelist-item__remove {
+    min-width: 28px;
+    min-height: 28px;
+    padding: var(--space-xs);
+    font-size: var(--font-size-md);
+    line-height: 1;
+}
+
+/* === Caller Actions (B/W List Tab) === */
+.caller-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-md);
+    margin-bottom: var(--space-md);
+    background: var(--color-bg-raised);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+}
+.caller-actions__label {
+    font-size: var(--font-size-sm);
+    color: var(--ctp-subtext0);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.caller-actions__label strong {
+    color: var(--ctp-text);
+    font-family: var(--font-mono);
 }
 
 /* === Firewall === */

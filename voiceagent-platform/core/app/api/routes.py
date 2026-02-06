@@ -332,6 +332,22 @@ def setup_routes(app_state):
             return {"entries": entries}
         return {"entries": []}
 
+    @router.post("/blacklist")
+    async def add_to_blacklist(data: dict):
+        """Nummer zur Blacklist hinzufuegen."""
+        blacklist_store = app_state.get("blacklist_store")
+        if blacklist_store:
+            caller_id = data.get("caller_id", "").strip()
+            if not caller_id:
+                raise HTTPException(status_code=400, detail="caller_id fehlt")
+            reason = data.get("reason", "Manuell hinzugefuegt")
+            await blacklist_store.add(caller_id, reason)
+            ws_manager = app_state.get("ws_manager")
+            if ws_manager:
+                await ws_manager.broadcast({"type": "blacklist_updated"})
+            return {"status": "ok", "caller_id": caller_id}
+        return {"status": "error"}
+
     @router.delete("/blacklist/{caller_id:path}")
     async def remove_from_blacklist(caller_id: str):
         """Nummer von der Blacklist entfernen."""
@@ -344,6 +360,47 @@ def setup_routes(app_state):
                     await ws_manager.broadcast({"type": "blacklist_updated"})
                 return {"status": "ok", "removed": caller_id}
             raise HTTPException(status_code=404, detail="Nummer nicht auf Blacklist")
+        return {"status": "error"}
+
+    # ============== Whitelist ==============
+
+    @router.get("/whitelist")
+    async def get_whitelist():
+        """Alle Whitelist-Nummern abrufen."""
+        blacklist_store = app_state.get("blacklist_store")
+        if blacklist_store:
+            entries = await blacklist_store.get_all_whitelist()
+            return {"entries": entries}
+        return {"entries": []}
+
+    @router.post("/whitelist")
+    async def add_to_whitelist(data: dict):
+        """Nummer zur Whitelist hinzufuegen."""
+        blacklist_store = app_state.get("blacklist_store")
+        if blacklist_store:
+            caller_id = data.get("caller_id", "").strip()
+            if not caller_id:
+                raise HTTPException(status_code=400, detail="caller_id fehlt")
+            note = data.get("note", "")
+            await blacklist_store.add_to_whitelist(caller_id, note)
+            ws_manager = app_state.get("ws_manager")
+            if ws_manager:
+                await ws_manager.broadcast({"type": "whitelist_updated"})
+            return {"status": "ok", "caller_id": caller_id}
+        return {"status": "error"}
+
+    @router.delete("/whitelist/{caller_id:path}")
+    async def remove_from_whitelist(caller_id: str):
+        """Nummer von der Whitelist entfernen."""
+        blacklist_store = app_state.get("blacklist_store")
+        if blacklist_store:
+            removed = await blacklist_store.remove_from_whitelist(caller_id)
+            if removed:
+                ws_manager = app_state.get("ws_manager")
+                if ws_manager:
+                    await ws_manager.broadcast({"type": "whitelist_updated"})
+                return {"status": "ok", "removed": caller_id}
+            raise HTTPException(status_code=404, detail="Nummer nicht auf Whitelist")
         return {"status": "error"}
 
     # ============== Firewall ==============

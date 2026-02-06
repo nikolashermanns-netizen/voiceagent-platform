@@ -20,7 +20,7 @@ from core.app.config import settings
 from core.app.db.database import get_database
 from core.app.sip.sip_client import SIPClient
 from core.app.sip.audio import sip_to_ai_input, ai_output_to_sip
-from core.app.ai.voice_client import VoiceClient
+from core.app.ai.voice_client import VoiceClient, MODEL_MINI, MODEL_PREMIUM, MODEL_MAP
 from core.app.ai.agent_router import AgentRouter
 from core.app.agents.registry import AgentRegistry
 from core.app.agents.manager import AgentManager
@@ -58,21 +58,56 @@ _audio_stats = {
 # ============== OpenAI Realtime Pricing ($/1M tokens) ==============
 
 _PRICING = {
-    "input_text": 5.00,
-    "input_audio": 100.00,
-    "output_text": 20.00,
-    "output_audio": 200.00,
+    "mini": {
+        "input_text": 0.60, "input_audio": 10.00,
+        "output_text": 2.40, "output_audio": 20.00,
+    },
+    "premium": {
+        "input_text": 4.00, "input_audio": 32.00,
+        "output_text": 16.00, "output_audio": 64.00,
+    },
+}
+
+# ============== Call-Level Model/Cost State ==============
+
+_call_cost_usd = 0.0
+_current_model_key = "mini"
+_user_chosen_model = "mini"
+_last_usage = {
+    "input_text_tokens": 0,
+    "input_audio_tokens": 0,
+    "output_text_tokens": 0,
+    "output_audio_tokens": 0,
 }
 
 
-def _calculate_cost(usage: dict) -> float:
-    """Berechnet Kosten in USD basierend auf Token-Usage."""
-    cost = 0.0
-    cost += usage.get("input_text_tokens", 0) * _PRICING["input_text"] / 1_000_000
-    cost += usage.get("input_audio_tokens", 0) * _PRICING["input_audio"] / 1_000_000
-    cost += usage.get("output_text_tokens", 0) * _PRICING["output_text"] / 1_000_000
-    cost += usage.get("output_audio_tokens", 0) * _PRICING["output_audio"] / 1_000_000
-    return cost
+def _set_model_state(model_key: str, user_chosen: bool = False):
+    """Setzt den aktuellen Model-State."""
+    global _current_model_key, _user_chosen_model
+    _current_model_key = model_key
+    if user_chosen:
+        _user_chosen_model = model_key
+
+
+def _calculate_delta_cost(usage: dict) -> float:
+    """Berechnet Kosten-Delta seit letztem Update basierend auf aktuellem Modell."""
+    global _last_usage, _call_cost_usd
+    pricing = _PRICING.get(_current_model_key, _PRICING["mini"])
+
+    delta_cost = 0.0
+    for token_key, price_key in [
+        ("input_text_tokens", "input_text"),
+        ("input_audio_tokens", "input_audio"),
+        ("output_text_tokens", "output_text"),
+        ("output_audio_tokens", "output_audio"),
+    ]:
+        delta_tokens = usage.get(token_key, 0) - _last_usage.get(token_key, 0)
+        if delta_tokens > 0:
+            delta_cost += delta_tokens * pricing[price_key] / 1_000_000
+
+    _last_usage = dict(usage)
+    _call_cost_usd += delta_cost
+    return _call_cost_usd
 
 
 # ============== Beep-Ton fuer Security Gate ==============
@@ -184,11 +219,24 @@ async def on_incoming_call(caller_id: str, remote_ip: str = None):
         })
         return
 
+    # Whitelist pruefen: Nummer ueberspringt Security-Code
+    is_whitelisted = blacklist_store and await blacklist_store.is_whitelisted(caller_id)
+    if is_whitelisted:
+        logger.info(f"WHITELIST: Anruf von {caller_id} - Security-Code wird uebersprungen")
+
     # Reset
+    global _call_cost_usd, _last_usage
     _audio_stats["caller_to_ai"] = 0
     _audio_stats["ai_to_caller"] = 0
     _audio_stats["caller_bytes"] = 0
     _audio_stats["ai_bytes"] = 0
+    _call_cost_usd = 0.0
+    _set_model_state("mini", user_chosen=True)
+    _last_usage = {
+        "input_text_tokens": 0, "input_audio_tokens": 0,
+        "output_text_tokens": 0, "output_audio_tokens": 0,
+    }
+    voice_client._model = MODEL_MINI  # Default: guenstiges Modell
     agent_router.clear_history()
 
     await ws_manager.broadcast({
@@ -198,6 +246,11 @@ async def on_incoming_call(caller_id: str, remote_ip: str = None):
 
     # Agent-Manager: Call starten (aktiviert Default-Agent)
     await agent_manager.start_call(caller_id)
+
+    # Whitelist: Sofort zu main_agent wechseln und freischalten
+    if is_whitelisted:
+        await agent_manager.switch_agent("main_agent")
+        agent_manager.set_call_unlocked(True)
 
     # Voice Client konfigurieren mit Tools/Instructions vom aktiven Agent
     voice_client.configure_for_agent(
@@ -369,6 +422,65 @@ async def on_function_call(call_id: str, name: str, arguments: dict) -> str:
         })
         return result
 
+    # Pruefen ob der Benutzer auflegen moechte (normales Auflegen, kein Security-Hangup)
+    if result and result == "__HANGUP_USER__":
+        sip_client: SIPClient = app_state["sip_client"]
+
+        logger.info("Anruf wird beendet (Benutzer hat aufgelegt)")
+
+        _cancel_security_timeout()
+
+        # Auflegen
+        if sip_client and sip_client.is_in_call:
+            await sip_client.hangup()
+
+        result = "Anruf wird beendet."
+
+        await ws_manager.broadcast({
+            "type": "function_result",
+            "name": name,
+            "result": result,
+        })
+        return result
+
+    # Pruefen ob das Ergebnis ein Model-Switch-Signal ist
+    if result and result.startswith("__MODEL_SWITCH__:"):
+        model_key = result.split(":", 1)[1]  # "mini" oder "premium"
+        model_id = MODEL_MAP.get(model_key)
+
+        if model_id and voice_client and voice_client.is_connected:
+            # Globals muessen in on_function_call scope erreichbar sein
+            _set_model_state(model_key, user_chosen=True)
+
+            # Tools/Instructions VOR Reconnect konfigurieren
+            voice_client.configure_for_agent(
+                agent_manager.get_tools(),
+                agent_manager.get_instructions()
+            )
+            success = await voice_client.switch_model_live(model_id)
+
+            label = "Mini" if model_key == "mini" else "Premium"
+            if success:
+                logger.info(f"Model-Switch via Tool: -> {model_key}")
+            else:
+                label = f"{model_key} (fehlgeschlagen)"
+
+            await ws_manager.broadcast({
+                "type": "function_result",
+                "name": name,
+                "result": f"Modell: {label}",
+            })
+            return "__MODEL_SWITCHED__"
+        else:
+            result = f"Modell-Wechsel zu '{model_key}' nicht moeglich."
+
+        await ws_manager.broadcast({
+            "type": "function_result",
+            "name": name,
+            "result": result,
+        })
+        return result
+
     # Pruefen ob das Ergebnis ein Agent-Switch-Signal ist
     if result and result.startswith("__SWITCH__:"):
         target_agent = result.split(":", 1)[1]
@@ -379,12 +491,35 @@ async def on_function_call(call_id: str, name: str, arguments: dict) -> str:
                 agent_manager.set_call_unlocked(True)
                 _cancel_security_timeout()
 
-            # OpenAI Session mit neuen Tools/Instructions aktualisieren
-            if voice_client and voice_client.is_connected:
-                await voice_client.update_session(
-                    tools=agent_manager.get_tools(),
-                    instructions=agent_manager.get_instructions()
-                )
+            # Pruefen ob der neue Agent ein anderes Modell erzwingt
+            new_tools = agent_manager.get_tools()
+            new_instructions = agent_manager.get_instructions()
+            preferred = agent_manager.active_agent.preferred_model if agent_manager.active_agent else None
+            target_key = preferred if preferred else _user_chosen_model
+            target_model = MODEL_MAP.get(target_key)
+            needs_model_switch = target_model and target_model != voice_client.model
+
+            if needs_model_switch and voice_client and voice_client.is_connected:
+                # Model-Switch: configure_for_agent VOR Reconnect damit neue Tools geladen werden
+                _set_model_state(target_key)
+                voice_client.configure_for_agent(new_tools, new_instructions)
+                await voice_client.switch_model_live(target_model)
+                logger.info(f"Agent-Switch + Model-Switch: -> {target_agent} ({target_key})")
+
+                await ws_manager.broadcast({
+                    "type": "function_result",
+                    "name": name,
+                    "result": f"Agent: {target_agent}, Modell: {target_key}",
+                })
+                return "__MODEL_SWITCHED__"
+            else:
+                # Kein Model-Switch: Session normal aktualisieren
+                if voice_client and voice_client.is_connected:
+                    await voice_client.update_session(
+                        tools=new_tools,
+                        instructions=new_instructions
+                    )
+
             display = agent_manager.active_agent.display_name if agent_manager.active_agent else target_agent
             result = f"Du bist jetzt verbunden mit: {display}"
             logger.info(f"Agent-Switch via Tool: -> {target_agent}")
@@ -430,6 +565,15 @@ async def on_call_ended(reason: str):
     })
 
 
+async def on_model_changed(model_key: str):
+    """AI-Modell wurde gewechselt."""
+    ws_manager: ConnectionManager = app_state["ws_manager"]
+    await ws_manager.broadcast({
+        "type": "model_changed",
+        "model": model_key,
+    })
+
+
 async def on_ai_state_changed(state: str):
     """AI-Status hat sich geaendert (idle/listening/user_speaking/thinking/speaking)."""
     ws_manager: ConnectionManager = app_state["ws_manager"]
@@ -440,14 +584,15 @@ async def on_ai_state_changed(state: str):
 
 
 async def on_usage_update(usage: dict):
-    """Token-Usage Update von OpenAI - Kosten berechnen und broadcasten."""
+    """Token-Usage Update von OpenAI - Delta-Kosten berechnen und broadcasten."""
     ws_manager: ConnectionManager = app_state["ws_manager"]
-    cost = _calculate_cost(usage)
+    cost = _calculate_delta_cost(usage)
     await ws_manager.broadcast({
         "type": "call_cost",
         "cost_usd": round(cost, 6),
         "cost_cents": round(cost * 100, 2),
         "usage": usage,
+        "model": _current_model_key,
     })
 
 
@@ -542,6 +687,7 @@ async def lifespan(app: FastAPI):
     voice_client.on_function_call = on_function_call
     voice_client.on_ai_state_changed = on_ai_state_changed
     voice_client.on_usage_update = on_usage_update
+    voice_client.on_model_changed = on_model_changed
 
     # SIP Client starten
     await sip_client.start()

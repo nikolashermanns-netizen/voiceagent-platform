@@ -53,12 +53,23 @@ def setup_ws_routes(app_state):
         sip = app_state.get("sip_client")
         agent_mgr = app_state.get("agent_manager")
 
+        voice = app_state.get("voice_client")
+        # Aktuelles Modell als Kurzname
+        current_model = "mini"
+        if voice:
+            from core.app.ai.voice_client import MODEL_MAP
+            for key, val in MODEL_MAP.items():
+                if val == voice.model:
+                    current_model = key
+                    break
+
         await websocket.send_json({
             "type": "status",
             "sip_registered": sip.is_registered if sip else False,
             "call_active": sip.is_in_call if sip else False,
             "active_agent": agent_mgr.active_agent_name if agent_mgr else None,
             "available_agents": agent_mgr.registry.get_agent_names() if agent_mgr else [],
+            "current_model": current_model,
         })
 
         try:

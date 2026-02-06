@@ -25,6 +25,7 @@
         aiMuted: false,
         aiState: 'idle',
         callCost: 0,
+        currentModel: 'mini',
         firewallEnabled: true,
         ideas: [],
         projects: [],
@@ -68,6 +69,8 @@
         DOM.aiLabel      = DOM.aiStatus.querySelector('.status-badge__label');
         DOM.callCost     = document.getElementById('call-cost');
         DOM.costLabel    = DOM.callCost.querySelector('.cost-badge__label');
+        DOM.modelBadge   = document.getElementById('model-badge');
+        DOM.modelLabel   = DOM.modelBadge.querySelector('.model-badge__label');
         DOM.agentSelect  = document.getElementById('agent-select');
         DOM.btnMute      = document.getElementById('btn-mute');
         DOM.btnHangup    = document.getElementById('btn-hangup');
@@ -89,6 +92,11 @@
         DOM.ideasList      = document.getElementById('ideas-list');
         DOM.btnRefreshIdeas = document.getElementById('btn-refresh-ideas');
         DOM.blacklistList  = document.getElementById('blacklist-list');
+        DOM.whitelistList  = document.getElementById('whitelist-list');
+        DOM.callerActions  = document.getElementById('caller-actions');
+        DOM.callerActionsNumber = document.getElementById('caller-actions-number');
+        DOM.btnAddBlacklist = document.getElementById('btn-add-blacklist');
+        DOM.btnAddWhitelist = document.getElementById('btn-add-whitelist');
         DOM.agentsList     = document.getElementById('agents-list');
         DOM.firewallStatus = document.getElementById('firewall-status');
         DOM.btnFirewallToggle = document.getElementById('btn-firewall-toggle');
@@ -248,10 +256,12 @@
                 State.callActive = data.call_active || false;
                 State.activeAgent = data.active_agent || null;
                 State.availableAgents = data.available_agents || [];
+                State.currentModel = data.current_model || 'mini';
 
                 UI.setSIPStatus(State.sipRegistered);
                 UI.setCallStatus(State.callActive, null);
                 UI.populateAgents(State.availableAgents, State.activeAgent);
+                UI.setModelBadge(State.currentModel);
 
                 fetchAgentsInfo();
                 fetchTasks();
@@ -269,8 +279,10 @@
                 State.callActive = true;
                 State.callerId = data.caller_id || 'Aktiv';
                 State.callCost = 0;
+                State.currentModel = 'mini';
                 UI.setCallActive(State.callerId);
                 UI.setCallCost(0);
+                UI.setModelBadge('mini');
                 DOM.btnHangup.disabled = false;
                 DOM.btnMute.disabled = false;
                 if (data.agent) {
@@ -324,6 +336,12 @@
             call_cost: function (data) {
                 State.callCost = data.cost_cents || 0;
                 UI.setCallCost(State.callCost);
+            },
+
+            model_changed: function (data) {
+                State.currentModel = data.model || 'mini';
+                UI.setModelBadge(State.currentModel);
+                addDebug('[MODEL] ' + State.currentModel);
             },
 
             coding_progress: function (data) {
@@ -386,6 +404,11 @@
                 fetchBlacklist();
                 addDebug('[BLACKLIST] Aktualisiert');
             },
+
+            whitelist_updated: function () {
+                fetchWhitelist();
+                addDebug('[WHITELIST] Aktualisiert');
+            },
         },
     };
 
@@ -428,6 +451,11 @@
             DOM.callLabel.textContent = 'Anruf aktiv: ' + callerId;
             DOM.btnHangup.disabled = false;
             DOM.btnMute.disabled = false;
+            // Caller-Actions anzeigen
+            if (DOM.callerActions && callerId) {
+                DOM.callerActionsNumber.textContent = callerId;
+                DOM.callerActions.style.display = '';
+            }
         },
 
         setCallEnded: function () {
@@ -439,6 +467,10 @@
             State.aiMuted = false;
             DOM.btnMute.textContent = 'Stumm';
             DOM.btnMute.classList.remove('btn--muted');
+            // Caller-Actions ausblenden
+            if (DOM.callerActions) {
+                DOM.callerActions.style.display = 'none';
+            }
         },
 
         setAIState: function (state) {
@@ -466,6 +498,12 @@
             } else {
                 DOM.costLabel.textContent = cents.toFixed(2) + ' ct';
             }
+        },
+
+        setModelBadge: function (model) {
+            var labels = { mini: 'Mini', premium: 'Premium' };
+            DOM.modelLabel.textContent = labels[model] || model;
+            DOM.modelBadge.className = 'status-badge model-badge model-badge--' + model;
         },
 
         setStatusBar: function (text) {
@@ -796,6 +834,36 @@
                 DOM.blacklistList.appendChild(div);
             });
         },
+
+        updateWhitelist: function (entries) {
+            DOM.whitelistList.innerHTML = '';
+            if (!entries || entries.length === 0) {
+                DOM.whitelistList.innerHTML = '<div class="empty-state">Keine freigeschalteten Nummern</div>';
+                return;
+            }
+
+            entries.forEach(function (entry) {
+                var div = document.createElement('div');
+                div.className = 'whitelist-item';
+
+                var date = entry.added_at ? new Date(entry.added_at).toLocaleString('de-DE') : '';
+
+                div.innerHTML =
+                    '<div class="whitelist-item__info">' +
+                        '<span class="whitelist-item__number">' + esc(entry.caller_id || '') + '</span>' +
+                        '<span class="whitelist-item__meta">' + esc(date) +
+                        (entry.note ? ' — ' + esc(entry.note) : '') + '</span>' +
+                    '</div>';
+
+                var btn = document.createElement('button');
+                btn.className = 'btn btn--small btn--danger whitelist-item__remove';
+                btn.setAttribute('data-whitelist-id', entry.caller_id || '');
+                btn.innerHTML = '&#10005;';
+                div.appendChild(btn);
+
+                DOM.whitelistList.appendChild(div);
+            });
+        },
     };
 
     // ============================================
@@ -865,6 +933,43 @@
         fetch('/blacklist/' + encodeURIComponent(callerId), { method: 'DELETE' })
             .then(function () { fetchBlacklist(); })
             .catch(function (e) { addDebug('[API] Blacklist Remove: ' + e.message); });
+    }
+
+    function addCurrentCallerToBlacklist() {
+        if (!State.callActive || !State.callerId) return;
+        fetch('/blacklist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ caller_id: State.callerId, reason: 'Manuell via Dashboard' }),
+        })
+            .then(function () { fetchBlacklist(); })
+            .catch(function (e) { addDebug('[API] Blacklist Add: ' + e.message); });
+    }
+
+    function fetchWhitelist() {
+        fetch('/whitelist')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                UI.updateWhitelist(data.entries || []);
+            })
+            .catch(function (e) { addDebug('[API] Whitelist: ' + e.message); });
+    }
+
+    function addCurrentCallerToWhitelist() {
+        if (!State.callActive || !State.callerId) return;
+        fetch('/whitelist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ caller_id: State.callerId }),
+        })
+            .then(function () { fetchWhitelist(); })
+            .catch(function (e) { addDebug('[API] Whitelist Add: ' + e.message); });
+    }
+
+    function removeFromWhitelist(callerId) {
+        fetch('/whitelist/' + encodeURIComponent(callerId), { method: 'DELETE' })
+            .then(function () { fetchWhitelist(); })
+            .catch(function (e) { addDebug('[API] Whitelist Remove: ' + e.message); });
     }
 
     function toggleFirewall() {
@@ -1035,6 +1140,22 @@
             }
         });
 
+        // Whitelist: Event delegation
+        DOM.whitelistList.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-whitelist-id]');
+            if (btn) {
+                removeFromWhitelist(btn.getAttribute('data-whitelist-id'));
+            }
+        });
+
+        // Caller-Actions: Aktuellen Anrufer zu Black/Whitelist hinzufuegen
+        if (DOM.btnAddBlacklist) {
+            DOM.btnAddBlacklist.addEventListener('click', addCurrentCallerToBlacklist);
+        }
+        if (DOM.btnAddWhitelist) {
+            DOM.btnAddWhitelist.addEventListener('click', addCurrentCallerToWhitelist);
+        }
+
         if (DOM.btnRefreshIdeas) {
             DOM.btnRefreshIdeas.addEventListener('click', fetchIdeas);
         }
@@ -1062,7 +1183,9 @@
         // Periodic refresh
         setInterval(fetchTasks, 10000);
         setInterval(fetchBlacklist, 10000);
+        setInterval(fetchWhitelist, 10000);
         fetchBlacklist();
+        fetchWhitelist();
     }
 
     if (document.readyState === 'loading') {

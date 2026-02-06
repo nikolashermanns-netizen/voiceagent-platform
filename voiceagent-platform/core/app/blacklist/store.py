@@ -40,7 +40,7 @@ class BlacklistStore:
         logger.warning(f"[Blacklist] Nummer gesperrt: {caller_id} ({reason})")
 
     async def remove(self, caller_id: str) -> bool:
-        """Entfernt eine Rufnummer von der Blacklist. Returns True wenn gefunden."""
+        """Entfernt eine Rufnummer von der Blacklist und loescht Failed-Call-Records."""
         row = await self.db.fetch_one(
             "SELECT caller_id FROM blacklist WHERE caller_id = ?",
             (caller_id,)
@@ -51,7 +51,12 @@ class BlacklistStore:
             "DELETE FROM blacklist WHERE caller_id = ?",
             (caller_id,)
         )
-        logger.info(f"[Blacklist] Nummer entsperrt: {caller_id}")
+        # Failed-Call-Records loeschen, damit 3 neue Fehlversuche noetig sind
+        await self.db.execute(
+            "DELETE FROM failed_unlock_calls WHERE caller_id = ?",
+            (caller_id,)
+        )
+        logger.info(f"[Blacklist] Nummer entsperrt + Failed-Calls geloescht: {caller_id}")
         return True
 
     async def get_all(self) -> list[dict]:
@@ -94,3 +99,42 @@ class BlacklistStore:
             return True
 
         return False
+
+    # ============== Whitelist ==============
+
+    async def is_whitelisted(self, caller_id: str) -> bool:
+        """Prueft ob eine Rufnummer auf der Whitelist steht."""
+        row = await self.db.fetch_one(
+            "SELECT caller_id FROM whitelist WHERE caller_id = ?",
+            (caller_id,)
+        )
+        return row is not None
+
+    async def add_to_whitelist(self, caller_id: str, note: str = "") -> None:
+        """Fuegt eine Rufnummer zur Whitelist hinzu."""
+        await self.db.execute(
+            "INSERT OR REPLACE INTO whitelist (caller_id, note, added_at) VALUES (?, ?, ?)",
+            (caller_id, note, datetime.utcnow().isoformat())
+        )
+        logger.info(f"[Whitelist] Nummer hinzugefuegt: {caller_id}")
+
+    async def remove_from_whitelist(self, caller_id: str) -> bool:
+        """Entfernt eine Rufnummer von der Whitelist. Returns True wenn gefunden."""
+        row = await self.db.fetch_one(
+            "SELECT caller_id FROM whitelist WHERE caller_id = ?",
+            (caller_id,)
+        )
+        if not row:
+            return False
+        await self.db.execute(
+            "DELETE FROM whitelist WHERE caller_id = ?",
+            (caller_id,)
+        )
+        logger.info(f"[Whitelist] Nummer entfernt: {caller_id}")
+        return True
+
+    async def get_all_whitelist(self) -> list[dict]:
+        """Gibt alle Whitelist-Eintraege zurueck."""
+        return await self.db.fetch_all(
+            "SELECT caller_id, note, added_at FROM whitelist ORDER BY added_at DESC"
+        )

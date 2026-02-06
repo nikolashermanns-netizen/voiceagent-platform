@@ -34,6 +34,9 @@
                 <div class="status-badge cost-badge" id="call-cost">
                     <span class="cost-badge__label">0.00 ct</span>
                 </div>
+                <div class="status-badge model-badge model-badge--mini" id="model-badge">
+                    <span class="model-badge__label">Mini</span>
+                </div>
             </div>
 
             <div class="header__controls">
@@ -69,7 +72,7 @@
                 <button class="tabs__tab tabs__tab--active" role="tab" data-tab="tasks" aria-selected="true">Tasks</button>
                 <button class="tabs__tab" role="tab" data-tab="coding" aria-selected="false">Coding</button>
                 <button class="tabs__tab" role="tab" data-tab="ideen" aria-selected="false">Ideen</button>
-                <button class="tabs__tab" role="tab" data-tab="blacklist" aria-selected="false">Blacklist</button>
+                <button class="tabs__tab" role="tab" data-tab="blacklist" aria-selected="false">Black/White List</button>
                 <button class="tabs__tab" role="tab" data-tab="agenten" aria-selected="false">Agenten</button>
                 <button class="tabs__tab" role="tab" data-tab="debug" aria-selected="false">Debug</button>
             </nav>
@@ -117,11 +120,23 @@
                 </div>
             </div>
 
-            <!-- Blacklist -->
+            <!-- Black/White List -->
             <div class="tabs__content" id="tab-blacklist" role="tabpanel" data-tab="blacklist">
-                <h3 class="section-title">Gesperrte Nummern</h3>
+                <!-- Aktuellen Anrufer hinzufuegen -->
+                <div class="caller-actions" id="caller-actions" style="display: none;">
+                    <span class="caller-actions__label">Anrufer: <strong id="caller-actions-number"></strong></span>
+                    <button class="btn btn--small btn--danger" id="btn-add-blacklist">Zur Blacklist</button>
+                    <button class="btn btn--small btn--success" id="btn-add-whitelist">Zur Whitelist</button>
+                </div>
+
+                <h3 class="section-title">Gesperrte Nummern (Blacklist)</h3>
                 <div id="blacklist-list">
                     <div class="empty-state">Keine gesperrten Nummern</div>
+                </div>
+
+                <h3 class="section-title" style="margin-top: var(--space-lg);">Freigeschaltete Nummern (Whitelist)</h3>
+                <div id="whitelist-list">
+                    <div class="empty-state">Keine freigeschalteten Nummern</div>
                 </div>
             </div>
 
@@ -166,6 +181,10 @@
         <button class="bottom-nav__item" data-tab="tasks">
             <span class="bottom-nav__icon">&#9776;</span>
             <span class="bottom-nav__label">Tasks</span>
+        </button>
+        <button class="bottom-nav__item" data-tab="blacklist">
+            <span class="bottom-nav__icon">&#128274;</span>
+            <span class="bottom-nav__label">B/W List</span>
         </button>
         <button class="bottom-nav__item" data-tab="debug">
             <span class="bottom-nav__icon">&#128736;</span>

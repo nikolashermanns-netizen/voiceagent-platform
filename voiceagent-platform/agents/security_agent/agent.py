@@ -62,6 +62,10 @@ class SecurityAgent(BaseAgent):
         return ["sicherheit", "zugang", "authentifizierung"]
 
     @property
+    def preferred_model(self) -> str:
+        return "mini"
+
+    @property
     def keywords(self) -> list[str]:
         return []  # Nicht per Intent erreichbar
 

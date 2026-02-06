@@ -14,6 +14,39 @@ from core.app.agents.registry import AgentRegistry
 logger = logging.getLogger(__name__)
 
 
+_AUFLEGEN_TOOL = {
+    "type": "function",
+    "name": "auflegen",
+    "description": "Beendet das Telefonat. Verwende dieses Tool wenn der Anrufer auflegen moechte, sich verabschiedet oder sagt 'leg auf', 'tschuess', 'auf wiedersehen'.",
+    "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    },
+}
+
+_MODEL_WECHSELN_TOOL = {
+    "type": "function",
+    "name": "model_wechseln",
+    "description": (
+        "Wechselt das AI-Modell. Verwende wenn der Anrufer "
+        "'model thinking', 'model premium', 'model teuer' oder "
+        "'model schnell', 'model guenstig', 'model mini', 'model cheap' sagt."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "model": {
+                "type": "string",
+                "enum": ["mini", "premium"],
+                "description": "mini = guenstig/schnell, premium = teuer/thinking"
+            }
+        },
+        "required": ["model"],
+    },
+}
+
+
 class AgentManager:
     """
     Verwaltet den aktiven Agent waehrend eines Anrufs.
@@ -147,9 +180,13 @@ class AgentManager:
         return True
 
     def get_tools(self) -> list[dict]:
-        """Gibt die Tools des aktiven Agents zurueck."""
+        """Gibt die Tools des aktiven Agents zurueck (inkl. globale Tools)."""
         if self._active_agent:
-            return self._active_agent.get_tools()
+            tools = self._active_agent.get_tools() + [_AUFLEGEN_TOOL]
+            # Model-Wechsel nur fuer Agents ohne erzwungenes Modell
+            if not self._active_agent.preferred_model:
+                tools.append(_MODEL_WECHSELN_TOOL)
+            return tools
         return []
 
     def get_instructions(self) -> str:
@@ -171,6 +208,17 @@ class AgentManager:
         """
         if not self._active_agent:
             return "Fehler: Kein Agent aktiv."
+
+        # Globales Tool: Auflegen (funktioniert in jedem Agent, auch Security)
+        if tool_name == "auflegen":
+            logger.info("Benutzer moechte auflegen (Auflegen-Tool)")
+            return "__HANGUP_USER__"
+
+        # Globales Tool: Model wechseln
+        if tool_name == "model_wechseln":
+            model = arguments.get("model", "mini")
+            logger.info(f"Model-Wechsel angefordert: {model}")
+            return f"__MODEL_SWITCH__:{model}"
 
         # Security Gate: Wenn Anruf nicht entsperrt, nur security_agent Tools erlauben
         if not self._call_unlocked and self._active_agent.name != "security_agent":

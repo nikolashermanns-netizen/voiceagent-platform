@@ -94,6 +94,13 @@ CREATE TABLE IF NOT EXISTS failed_unlock_calls (
     failed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Whitelist (Nummern die Security-Code ueberspringen)
+CREATE TABLE IF NOT EXISTS whitelist (
+    caller_id TEXT PRIMARY KEY,
+    note TEXT,
+    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Schema-Version
 CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY,

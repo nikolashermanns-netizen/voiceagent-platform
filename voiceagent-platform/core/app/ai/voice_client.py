@@ -16,14 +16,17 @@ from core.app.config import settings
 logger = logging.getLogger(__name__)
 
 # Verfuegbare OpenAI Realtime Modelle
-AVAILABLE_MODELS = [
-    "gpt-realtime",
-    "gpt-4o-realtime-preview-2024-12-17",
-    "gpt-4o-mini-realtime-preview-2024-12-17",
-    "gpt-4o-realtime-preview",
-]
+MODEL_MINI = "gpt-4o-mini-realtime-preview-2024-12-17"
+MODEL_PREMIUM = "gpt-4o-realtime-preview-2024-12-17"
+DEFAULT_MODEL = MODEL_MINI  # Guenstiges Modell als Default
 
-DEFAULT_MODEL = "gpt-realtime"
+AVAILABLE_MODELS = [MODEL_MINI, MODEL_PREMIUM]
+
+# Mapping: Kurzname -> Modell-ID
+MODEL_MAP = {
+    "mini": MODEL_MINI,
+    "premium": MODEL_PREMIUM,
+}
 
 
 class VoiceClient:
@@ -73,6 +76,7 @@ class VoiceClient:
         self.on_debug_event: Optional[Callable[[str, dict], None]] = None
         self.on_ai_state_changed: Optional[Callable] = None
         self.on_usage_update: Optional[Callable] = None
+        self.on_model_changed: Optional[Callable] = None
 
     @property
     def model(self) -> str:
@@ -87,6 +91,59 @@ class VoiceClient:
             return True
         logger.warning(f"Unbekanntes Modell: {model}")
         return False
+
+    async def switch_model_live(self, model: str) -> bool:
+        """
+        Wechselt das Modell waehrend eines laufenden Anrufs.
+
+        Erfordert Disconnect+Reconnect da das Modell in der WebSocket-URL steckt.
+        Usage wird NICHT zurueckgesetzt (Kosten akkumulieren weiter).
+
+        Args:
+            model: Modell-ID (aus AVAILABLE_MODELS)
+
+        Returns:
+            True wenn erfolgreich
+        """
+        if model not in AVAILABLE_MODELS:
+            logger.warning(f"Unbekanntes Modell fuer Live-Switch: {model}")
+            return False
+
+        if model == self._model:
+            logger.info(f"Modell {model} bereits aktiv")
+            return True
+
+        old_model = self._model
+        self._model = model
+
+        # Usage vor Disconnect sichern (disconnect wuerde sie resetten)
+        saved_usage = dict(self._usage)
+
+        logger.info(f"Model Live-Switch: {old_model} -> {model}")
+
+        # Disconnect (ohne Usage-Reset)
+        await self.disconnect()
+
+        # Usage wiederherstellen
+        self._usage = saved_usage
+
+        # Reconnect mit neuem Modell (tools/instructions sind in self gespeichert)
+        await self.connect()
+
+        # Usage nochmal wiederherstellen (connect resettet sie)
+        self._usage = saved_usage
+
+        if self.on_model_changed:
+            # Kurzname ermitteln
+            short_name = model
+            for key, val in MODEL_MAP.items():
+                if val == model:
+                    short_name = key
+                    break
+            await self.on_model_changed(short_name)
+
+        logger.info(f"Model Live-Switch abgeschlossen: {model}")
+        return True
 
     def configure_for_agent(self, tools: list[dict], instructions: str):
         """
@@ -382,6 +439,14 @@ class VoiceClient:
             result = await self.on_function_call(call_id, name, arguments)
         else:
             result = f"Fehler: Kein Handler fuer Function Call '{name}'"
+
+        # Model-Switch: Session wurde neu aufgebaut, altes call_id ungueltig
+        if result == "__MODEL_SWITCHED__":
+            logger.info("[OpenAI] Model Switch - ueberspringe Function Result, triggere Greeting")
+            self._response_in_progress = False
+            await asyncio.sleep(0.3)
+            await self.trigger_greeting()
+            return
 
         # Ergebnis an OpenAI senden
         await self._send_function_result(call_id, result)
