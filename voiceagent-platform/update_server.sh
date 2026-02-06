@@ -53,6 +53,74 @@ check_local_changes() {
     fi
 }
 
+# Smart Git Pull auf Remote: auto-reset wenn kein Diff zu HEAD, sonst lokal fragen
+smart_pull_remote() {
+    log "Pulling latest changes auf '$SSH_HOST'..."
+
+    local pull_output pull_exit
+    set +e
+    pull_output=$(ssh "$SSH_HOST" bash -s -- "$REMOTE_DIR" << 'PULL_SCRIPT' 2>&1
+REMOTE_DIR="$1"
+cd "$REMOTE_DIR"
+
+# Try normal pull
+if git pull 2>&1; then
+    exit 0
+fi
+
+# Pull failed - check dirty files
+DIRTY_FILES=$(git diff --name-only)
+if [ -z "$DIRTY_FILES" ]; then
+    echo "Git pull fehlgeschlagen (keine dirty files)"
+    exit 1
+fi
+
+# Check if dirty files actually differ from HEAD
+HAS_REAL_DIFF=false
+for f in $DIRTY_FILES; do
+    if [ -n "$(git diff HEAD -- "$f")" ]; then
+        HAS_REAL_DIFF=true
+        break
+    fi
+done
+
+if [ "$HAS_REAL_DIFF" = false ]; then
+    echo "Lokale Dateien identisch mit HEAD. Auto-reset..."
+    git checkout -- $DIRTY_FILES
+    git pull 2>&1 || { echo "Git pull fehlgeschlagen nach reset"; exit 1; }
+    exit 0
+fi
+
+# Real diff - output marker + diff
+echo "__REAL_DIFF__"
+git diff HEAD
+exit 2
+PULL_SCRIPT
+    )
+    pull_exit=$?
+    set -e
+
+    if [ $pull_exit -eq 0 ]; then
+        log "Pull erfolgreich."
+    elif [ $pull_exit -eq 2 ]; then
+        warn "Echte lokale Aenderungen auf dem Server:"
+        echo ""
+        echo "$pull_output" | sed '1,/^__REAL_DIFF__$/d'
+        echo ""
+        read -p "$(echo -e "${YELLOW}[Server]${NC} Aenderungen ueberschreiben und Pull fortsetzen? (j/n): ")" answer
+        if [ "$answer" = "j" ] || [ "$answer" = "J" ] || [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+            log "Resette und pull..."
+            ssh "$SSH_HOST" "cd '$REMOTE_DIR' && git checkout . && git pull" || error "Git pull fehlgeschlagen"
+            log "Pull erfolgreich."
+        else
+            error "Abgebrochen."
+        fi
+    else
+        [ -n "$pull_output" ] && echo "$pull_output"
+        error "Git pull fehlgeschlagen"
+    fi
+}
+
 # SSH-Verbindung testen
 check_ssh() {
     log "Teste SSH-Verbindung zu '$SSH_HOST'..."
@@ -65,6 +133,11 @@ check_ssh() {
 setup() {
     check_local_changes
     check_ssh
+
+    # Smart pull wenn Repo bereits existiert
+    if ssh "$SSH_HOST" "[ -d '$REMOTE_DIR/.git' ]" 2>/dev/null; then
+        smart_pull_remote
+    fi
 
     log "Starte Server-Setup auf '$SSH_HOST'..."
 
@@ -133,43 +206,10 @@ if ! command -v git &> /dev/null; then
     sudo apt-get update && sudo apt-get install -y git
 fi
 
-# 4. Repo clonen oder aktualisieren
+# 4. Repo clonen (Pull wurde bereits lokal via smart_pull_remote erledigt)
 if [ -d "$REMOTE_DIR/.git" ]; then
-    log "Repo existiert. Pulling latest..."
+    log "Repo existiert."
     cd "$REMOTE_DIR"
-    if ! git pull 2>&1; then
-        # Pull failed - check if dirty files actually differ from HEAD
-        DIRTY_FILES=$(git diff --name-only)
-        if [ -z "$DIRTY_FILES" ]; then
-            # Untracked files or other issue
-            error "Git pull fehlgeschlagen"
-        fi
-        HAS_REAL_DIFF=false
-        for f in $DIRTY_FILES; do
-            if [ -n "$(git diff HEAD -- "$f")" ]; then
-                HAS_REAL_DIFF=true
-                break
-            fi
-        done
-        if [ "$HAS_REAL_DIFF" = false ]; then
-            warn "Lokale Dateien geaendert aber identisch mit HEAD. Resette..."
-            git checkout -- $DIRTY_FILES
-            git pull || error "Git pull fehlgeschlagen"
-        else
-            warn "Echte lokale Aenderungen gefunden:"
-            echo ""
-            git diff HEAD
-            echo ""
-            read -p "$(echo -e "${YELLOW}[Remote]${NC} Aenderungen ueberschreiben und Pull fortsetzen? (j/n): ")" answer < /dev/tty
-            if [ "$answer" = "j" ] || [ "$answer" = "J" ] || [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
-                warn "Resette lokale Aenderungen..."
-                git checkout -- $DIRTY_FILES
-                git pull || error "Git pull fehlgeschlagen"
-            else
-                error "Git pull abgebrochen."
-            fi
-        fi
-    fi
 else
     log "Repo clonen nach $REMOTE_DIR..."
     sudo mkdir -p "$(dirname "$REMOTE_DIR")"
@@ -271,6 +311,8 @@ update() {
     check_ssh
     log "Update auf '$SSH_HOST'..."
 
+    smart_pull_remote
+
     ssh "$SSH_HOST" bash -s -- "$REMOTE_DIR" << 'REMOTE_SCRIPT'
 set -e
 REMOTE_DIR="$1"
@@ -285,40 +327,6 @@ else
 fi
 
 cd "$REMOTE_DIR/voiceagent-platform"
-
-echo -e "\033[0;32m[Remote]\033[0m Pulling latest changes..."
-if ! git -C "$REMOTE_DIR" pull 2>&1; then
-    cd "$REMOTE_DIR"
-    DIRTY_FILES=$(git diff --name-only)
-    if [ -z "$DIRTY_FILES" ]; then
-        echo -e "\033[0;31m[Remote]\033[0m Git pull fehlgeschlagen"; exit 1
-    fi
-    HAS_REAL_DIFF=false
-    for f in $DIRTY_FILES; do
-        if [ -n "$(git diff HEAD -- "$f")" ]; then
-            HAS_REAL_DIFF=true
-            break
-        fi
-    done
-    if [ "$HAS_REAL_DIFF" = false ]; then
-        echo -e "\033[1;33m[Remote]\033[0m Lokale Dateien geaendert aber identisch mit HEAD. Resette..."
-        git checkout -- $DIRTY_FILES
-        git pull || { echo -e "\033[0;31m[Remote]\033[0m Git pull fehlgeschlagen"; exit 1; }
-    else
-        echo -e "\033[1;33m[Remote]\033[0m Echte lokale Aenderungen gefunden:"
-        echo ""
-        git diff HEAD
-        echo ""
-        read -p "$(echo -e "\033[1;33m[Remote]\033[0m Aenderungen ueberschreiben und Pull fortsetzen? (j/n): ")" answer < /dev/tty
-        if [ "$answer" = "j" ] || [ "$answer" = "J" ] || [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
-            echo -e "\033[1;33m[Remote]\033[0m Resette lokale Aenderungen..."
-            git checkout -- $DIRTY_FILES
-            git pull || { echo -e "\033[0;31m[Remote]\033[0m Git pull fehlgeschlagen"; exit 1; }
-        else
-            echo -e "\033[0;31m[Remote]\033[0m Git pull abgebrochen."; exit 1
-        fi
-    fi
-fi
 
 echo -e "\033[0;32m[Remote]\033[0m Stopping services..."
 $COMPOSE down 2>/dev/null || true
