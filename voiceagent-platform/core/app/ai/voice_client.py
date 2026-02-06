@@ -49,6 +49,7 @@ class VoiceClient:
         self.muted = False
         self._model = DEFAULT_MODEL
         self._response_in_progress = False  # Finding #4: Response-Status tracken
+        self._unmute_after_response = False  # Security Gate: Nach AI-Response auto-unmute
 
         # Tools und Instructions kommen vom AgentManager
         self._tools: list[dict] = []
@@ -243,6 +244,11 @@ class VoiceClient:
 
         elif event_type == "response.done":
             self._response_in_progress = False
+            # Security Gate: Auto-unmute nach stummer AI-Response
+            if self._unmute_after_response:
+                self.muted = False
+                self._unmute_after_response = False
+                logger.info("[OpenAI] Auto-unmute nach Security-Response")
 
         # --- Audio Events ---
         elif event_type == "response.audio.delta":
@@ -263,6 +269,10 @@ class VoiceClient:
         elif event_type == "input_audio_buffer.speech_started":
             logger.info("[OpenAI] Sprache erkannt - Interruption")
             self._response_in_progress = False  # Interruption beendet laufende Response
+            # Security Gate: Auto-unmute bei Interruption
+            if self._unmute_after_response:
+                self.muted = False
+                self._unmute_after_response = False
             if self.on_interruption:
                 await self.on_interruption()
 
@@ -423,5 +433,6 @@ class VoiceClient:
         self._audio_chunk_count = 0
         self._sent_audio_count = 0
         self._response_in_progress = False
+        self._unmute_after_response = False
 
         logger.info("OpenAI Realtime API getrennt")

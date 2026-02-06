@@ -6,7 +6,9 @@ Verbindet alle Komponenten: SIP, AI, Agents, Tasks, WebSocket.
 
 import asyncio
 import logging
+import math
 import os
+import struct
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -51,6 +53,78 @@ _audio_stats = {
     "caller_bytes": 0,
     "ai_bytes": 0,
 }
+
+
+# ============== Beep-Ton fuer Security Gate ==============
+
+def _generate_beep(freq=800, duration_ms=150, sample_rate=48000, volume=0.3):
+    """Erzeugt einen kurzen Beep-Ton als PCM16 bei 48kHz fuer SIP."""
+    num_samples = int(sample_rate * duration_ms / 1000)
+    data = bytearray(num_samples * 2)
+    fade_samples = int(sample_rate * 0.01)  # 10ms fade in/out
+    for i in range(num_samples):
+        envelope = 1.0
+        if i < fade_samples:
+            envelope = i / fade_samples
+        elif i > num_samples - fade_samples:
+            envelope = (num_samples - i) / fade_samples
+        value = int(volume * envelope * 32767 * math.sin(2 * math.pi * freq * i / sample_rate))
+        struct.pack_into('<h', data, i * 2, max(-32768, min(32767, value)))
+    return bytes(data)
+
+_BEEP_SOUND = _generate_beep()
+
+
+# ============== Security Gate Timeout ==============
+
+SECURITY_TIMEOUT_SECONDS = 15
+_security_timeout_task = None
+
+
+async def _start_security_timeout():
+    """Startet den 15s Inaktivitaets-Timeout fuer Security Gate."""
+    global _security_timeout_task
+    _cancel_security_timeout()
+    _security_timeout_task = asyncio.create_task(_security_timeout_handler())
+
+
+def _cancel_security_timeout():
+    """Stoppt den Security-Timeout."""
+    global _security_timeout_task
+    if _security_timeout_task and not _security_timeout_task.done():
+        _security_timeout_task.cancel()
+    _security_timeout_task = None
+
+
+async def _security_timeout_handler():
+    """Nach 15s Stille im Security Gate: Anruf beenden."""
+    try:
+        await asyncio.sleep(SECURITY_TIMEOUT_SECONDS)
+    except asyncio.CancelledError:
+        return
+
+    sip_client = app_state.get("sip_client")
+    agent_manager = app_state.get("agent_manager")
+
+    if not (sip_client and sip_client.is_in_call):
+        return
+    if not (agent_manager and agent_manager.active_agent_name == "security_agent"):
+        return
+
+    logger.warning(f"Security Timeout - {SECURITY_TIMEOUT_SECONDS}s keine Eingabe, Anruf wird beendet")
+
+    # Fehlgeschlagenen Anruf aufzeichnen und Auto-Blacklist pruefen
+    blacklist_store = app_state.get("blacklist_store")
+    ws_manager = app_state.get("ws_manager")
+    caller_id = agent_manager._current_caller
+
+    if blacklist_store and caller_id:
+        await blacklist_store.record_failed_call(caller_id)
+        blacklisted = await blacklist_store.check_and_auto_blacklist(caller_id)
+        if blacklisted and ws_manager:
+            await ws_manager.broadcast({"type": "blacklist_updated"})
+
+    await sip_client.hangup()
 
 
 # ============== Event Handlers ==============
@@ -115,12 +189,16 @@ async def on_incoming_call(caller_id: str, remote_ip: str = None):
     await sip_client.accept_call()
     await voice_client.connect()
 
-    # Begruessung nach kurzer Verzoegerung
-    async def delayed_greeting():
-        await asyncio.sleep(0.2)
-        await voice_client.trigger_greeting()
+    # Security Agent: Kein Greeting, stattdessen 15s Timeout starten
+    if agent_manager.active_agent_name == "security_agent":
+        await _start_security_timeout()
+    else:
+        # Begruessung nach kurzer Verzoegerung (nur fuer nicht-Security Agents)
+        async def delayed_greeting():
+            await asyncio.sleep(0.2)
+            await voice_client.trigger_greeting()
 
-    asyncio.create_task(delayed_greeting())
+        asyncio.create_task(delayed_greeting())
 
     await ws_manager.broadcast({
         "type": "call_active",
@@ -176,6 +254,12 @@ async def on_transcript(role: str, text: str, is_final: bool):
     ws_manager: ConnectionManager = app_state["ws_manager"]
     agent_router: AgentRouter = app_state["agent_router"]
 
+    # Security Gate: Timeout bei Anrufer-Sprache zuruecksetzen
+    if role in ("caller", "user") and is_final and text:
+        agent_manager: AgentManager = app_state["agent_manager"]
+        if agent_manager and agent_manager.active_agent_name == "security_agent":
+            await _start_security_timeout()  # Reset: neuer 15s Timer
+
     # Transkript an Router fuer Intent-Erkennung
     if is_final and text:
         agent_router.add_transcript(role, text)
@@ -204,6 +288,32 @@ async def on_function_call(call_id: str, name: str, arguments: dict) -> str:
     # Agent fuehrt Tool aus
     result = await agent_manager.execute_tool(name, arguments)
 
+    # Pruefen ob das Ergebnis ein Beep-Signal ist (Security Gate: falscher Code)
+    if result and result == "__BEEP__":
+        sip_client: SIPClient = app_state["sip_client"]
+
+        logger.info("[SecurityGate] Falscher Code - Beep")
+
+        # AI stumm schalten (AI-Response wird unterdrueckt, auto-unmute nach response.done)
+        voice_client.muted = True
+        voice_client._unmute_after_response = True
+
+        # Beep-Ton direkt an SIP senden
+        if sip_client and sip_client.is_in_call:
+            await sip_client.send_audio(_BEEP_SOUND)
+
+        # Security Timeout zuruecksetzen
+        await _start_security_timeout()
+
+        result = "Falscher Code. Sage nichts. Warte auf naechste Eingabe."
+
+        await ws_manager.broadcast({
+            "type": "function_result",
+            "name": name,
+            "result": "Falscher Code (Beep)",
+        })
+        return result
+
     # Pruefen ob das Ergebnis ein Hangup-Signal ist (Security Gate: zu viele Fehlversuche)
     if result and result.startswith("__HANGUP__"):
         sip_client: SIPClient = app_state["sip_client"]
@@ -211,6 +321,11 @@ async def on_function_call(call_id: str, name: str, arguments: dict) -> str:
         caller_id = agent_manager._current_caller
 
         logger.warning(f"Anruf wird beendet (Security Gate): {caller_id}")
+
+        # AI stumm schalten (Anruf wird eh beendet)
+        voice_client.muted = True
+        voice_client._unmute_after_response = True
+        _cancel_security_timeout()
 
         # Fehlgeschlagenen Anruf aufzeichnen und Auto-Blacklist pruefen
         if blacklist_store and caller_id:
@@ -242,6 +357,7 @@ async def on_function_call(call_id: str, name: str, arguments: dict) -> str:
             # Security Gate: Wenn von security_agent weggewechselt wird, Anruf freischalten
             if agent_manager.active_agent_name != "security_agent":
                 agent_manager.set_call_unlocked(True)
+                _cancel_security_timeout()
 
             # OpenAI Session mit neuen Tools/Instructions aktualisieren
             if voice_client and voice_client.is_connected:
@@ -282,6 +398,8 @@ async def on_call_ended(reason: str):
     ws_manager: ConnectionManager = app_state["ws_manager"]
 
     logger.info(f"Anruf beendet: {reason}")
+
+    _cancel_security_timeout()
 
     await agent_manager.end_call()
     await voice_client.disconnect()

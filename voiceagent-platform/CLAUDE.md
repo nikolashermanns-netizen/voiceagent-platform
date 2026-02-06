@@ -15,8 +15,13 @@
 - Der `security_agent` darf NICHT per Intent-Routing erreichbar sein (keywords=[], matches_intent gibt 0.0)
 - Kein Agent darf Tools ausfuehren solange `_call_unlocked == False` (ausser security_agent)
 - Jeder neue Anruf startet mit `_call_unlocked = False`
+- **Security Agent ist KOMPLETT STUMM - kein Greeting, kein Sprechen, keine Antworten**
+- **Falscher Code: `__BEEP__` Signal -> Beep-Ton wird direkt an SIP gesendet, AI bleibt stumm**
+- **15s Inaktivitaets-Timeout: Keine Sprache erkannt -> Anruf wird beendet**
 - Nach 3 falschen Code-Versuchen pro Anruf: `__HANGUP__` Signal -> Anruf wird beendet
-- `__HANGUP__` wird in `on_function_call()` in main.py erkannt (analog zu `__SWITCH__`)
+- `__BEEP__` und `__HANGUP__` werden in `on_function_call()` in main.py erkannt
+- AI wird bei `__BEEP__` per `muted=True` + `_unmute_after_response` stumm geschaltet
+- Beep-Ton: 800Hz/150ms Sinuswelle direkt an SIP (48kHz PCM16), gecached als `_BEEP_SOUND`
 - Fehlgeschlagene Anrufe werden in `failed_unlock_calls` Tabelle aufgezeichnet
 - 3 fehlgeschlagene Anrufe einer Nummer in 12h -> automatische Blacklist
 - Blacklist-Check erfolgt in `on_incoming_call()` VOR dem Security Agent
