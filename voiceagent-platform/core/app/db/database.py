@@ -133,6 +133,9 @@ class Database:
         # Schema erstellen
         await self._db.executescript(SCHEMA_SQL)
 
+        # Migrationen: fehlende Spalten hinzufuegen (ALTER TABLE IF NOT EXISTS gibt es nicht)
+        await self._migrate_columns()
+
         # Schema-Version setzen
         await self._db.execute(
             "INSERT OR IGNORE INTO schema_version (version) VALUES (?)",
@@ -141,6 +144,20 @@ class Database:
         await self._db.commit()
 
         logger.info(f"Datenbank initialisiert: {self.db_path}")
+
+    async def _migrate_columns(self):
+        """Fuegt fehlende Spalten zu bestehenden Tabellen hinzu."""
+        migrations = [
+            ("calls", "cost_cents", "REAL DEFAULT 0.0"),
+            ("calls", "logs", "TEXT DEFAULT ''"),
+        ]
+        for table, column, col_type in migrations:
+            try:
+                await self._db.execute(f"SELECT {column} FROM {table} LIMIT 0")
+            except Exception:
+                logger.info(f"Migration: {table}.{column} hinzufuegen")
+                await self._db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+                await self._db.commit()
 
     async def close(self):
         """Datenbank-Verbindung schliessen."""
