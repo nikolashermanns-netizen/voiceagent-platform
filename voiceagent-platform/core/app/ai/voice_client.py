@@ -459,6 +459,13 @@ class VoiceClient:
             await self.trigger_greeting()
             return
 
+        # Security Gate: __BEEP_QUIET__ = Result senden aber KEINE neue Response triggern
+        # AI wartet passiv auf naechsten Audio-Input (VAD triggert automatisch)
+        if result and result.startswith("__BEEP_QUIET__:"):
+            quiet_result = result.split(":", 1)[1]
+            await self._send_function_output_only(call_id, quiet_result)
+            return
+
         # Ergebnis an OpenAI senden
         await self._send_function_result(call_id, result)
 
@@ -501,6 +508,26 @@ class VoiceClient:
         except Exception as e:
             self._response_in_progress = False
             logger.error(f"Fehler beim Senden des Function-Ergebnisses: {e}")
+
+    async def _send_function_output_only(self, call_id: str, result: str):
+        """Sendet Function-Output OHNE response.create - AI wartet passiv auf naechsten Input."""
+        if not self._ws or not self._running:
+            return
+        try:
+            output_event = {
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": result
+                }
+            }
+            await self._ws.send_str(json.dumps(output_event))
+            self._response_in_progress = False
+            await self._set_ai_state("listening")
+            logger.info(f"[OpenAI] Function Output gesendet (ohne Response) fuer call_id={call_id}")
+        except Exception as e:
+            logger.error(f"Fehler beim Senden des Function-Outputs: {e}")
 
     async def send_audio(self, audio_data: bytes):
         """

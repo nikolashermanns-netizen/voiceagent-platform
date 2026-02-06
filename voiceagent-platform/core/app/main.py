@@ -422,10 +422,6 @@ async def on_function_call(call_id: str, name: str, arguments: dict) -> str:
 
         logger.info("[SecurityGate] Falscher Code - Beep")
 
-        # AI stumm schalten (AI-Response wird unterdrueckt, auto-unmute nach response.done)
-        voice_client.muted = True
-        voice_client._unmute_after_response = True
-
         # Beep-Ton direkt an SIP senden
         if sip_client and sip_client.is_in_call:
             await sip_client.send_audio(_BEEP_SOUND)
@@ -433,14 +429,15 @@ async def on_function_call(call_id: str, name: str, arguments: dict) -> str:
         # Security Timeout zuruecksetzen
         await _start_security_timeout()
 
-        result = "Falscher Code. Sage nichts. Warte auf naechste Eingabe."
-
         await ws_manager.broadcast({
             "type": "function_result",
             "name": name,
             "result": "Falscher Code (Beep)",
         })
-        return result
+
+        # __BEEP_QUIET__: Result senden aber KEINE neue Response triggern
+        # AI wartet passiv auf naechsten Audio-Input vom Anrufer
+        return "__BEEP_QUIET__:Warte auf Code."
 
     # Pruefen ob das Ergebnis ein Hangup-Signal ist (Security Gate: zu viele Fehlversuche)
     if result and result.startswith("__HANGUP__"):
