@@ -23,6 +23,8 @@
         activeAgent: null,
         availableAgents: [],
         aiMuted: false,
+        aiState: 'idle',
+        callCost: 0,
         firewallEnabled: true,
         ideas: [],
         projects: [],
@@ -61,6 +63,11 @@
         DOM.callStatus   = document.getElementById('call-status');
         DOM.callDot      = DOM.callStatus.querySelector('.status-badge__dot');
         DOM.callLabel    = DOM.callStatus.querySelector('.status-badge__label');
+        DOM.aiStatus     = document.getElementById('ai-status');
+        DOM.aiDot        = DOM.aiStatus.querySelector('.status-badge__dot');
+        DOM.aiLabel      = DOM.aiStatus.querySelector('.status-badge__label');
+        DOM.callCost     = document.getElementById('call-cost');
+        DOM.costLabel    = DOM.callCost.querySelector('.cost-badge__label');
         DOM.agentSelect  = document.getElementById('agent-select');
         DOM.btnMute      = document.getElementById('btn-mute');
         DOM.btnHangup    = document.getElementById('btn-hangup');
@@ -261,7 +268,9 @@
             call_active: function (data) {
                 State.callActive = true;
                 State.callerId = data.caller_id || 'Aktiv';
+                State.callCost = 0;
                 UI.setCallActive(State.callerId);
+                UI.setCallCost(0);
                 DOM.btnHangup.disabled = false;
                 DOM.btnMute.disabled = false;
                 if (data.agent) {
@@ -304,6 +313,17 @@
                 UI.updateAgentSelect(State.activeAgent);
                 fetchAgentsInfo();
                 addDebug('[AGENT] ' + (data.old_agent || '') + ' → ' + State.activeAgent);
+            },
+
+            ai_state: function (data) {
+                State.aiState = data.state || 'idle';
+                UI.setAIState(State.aiState);
+                addDebug('[AI] ' + State.aiState);
+            },
+
+            call_cost: function (data) {
+                State.callCost = data.cost_cents || 0;
+                UI.setCallCost(State.callCost);
             },
 
             coding_progress: function (data) {
@@ -419,6 +439,33 @@
             State.aiMuted = false;
             DOM.btnMute.textContent = 'Stumm';
             DOM.btnMute.classList.remove('btn--muted');
+        },
+
+        setAIState: function (state) {
+            var labels = {
+                idle: 'AI: Idle',
+                listening: 'AI: Hoert zu',
+                user_speaking: 'Anrufer spricht',
+                thinking: 'AI: Denkt...',
+                speaking: 'AI: Spricht',
+            };
+            var dotClasses = {
+                idle: 'status-badge__dot--offline',
+                listening: 'status-badge__dot--online',
+                user_speaking: 'status-badge__dot--active',
+                thinking: 'status-badge__dot--thinking',
+                speaking: 'status-badge__dot--speaking',
+            };
+            DOM.aiLabel.textContent = labels[state] || 'AI: ' + state;
+            DOM.aiDot.className = 'status-badge__dot ' + (dotClasses[state] || '');
+        },
+
+        setCallCost: function (cents) {
+            if (cents >= 100) {
+                DOM.costLabel.textContent = (cents / 100).toFixed(2) + ' EUR';
+            } else {
+                DOM.costLabel.textContent = cents.toFixed(2) + ' ct';
+            }
         },
 
         setStatusBar: function (text) {

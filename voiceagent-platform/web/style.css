@@ -198,11 +198,22 @@ body {
 .status-badge__dot--online  { background: var(--color-status-online); }
 .status-badge__dot--offline { background: var(--color-status-offline); }
 .status-badge__dot--warning { background: var(--color-status-warning); }
-.status-badge__dot--active  { background: var(--color-status-active); animation: pulse 2s ease-in-out infinite; }
+.status-badge__dot--active   { background: var(--color-status-active); animation: pulse 2s ease-in-out infinite; }
+.status-badge__dot--thinking { background: var(--ctp-mauve); animation: pulse 1s ease-in-out infinite; }
+.status-badge__dot--speaking { background: var(--ctp-green); animation: pulse 1.5s ease-in-out infinite; }
 
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50%      { opacity: 0.4; }
+}
+
+/* === Cost Badge === */
+.cost-badge {
+    font-family: var(--font-mono);
+    color: var(--ctp-peach);
+}
+.cost-badge__label {
+    font-variant-numeric: tabular-nums;
 }
 
 /* === Buttons === */

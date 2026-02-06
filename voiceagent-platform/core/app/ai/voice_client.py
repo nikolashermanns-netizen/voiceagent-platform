@@ -51,6 +51,16 @@ class VoiceClient:
         self._response_in_progress = False  # Finding #4: Response-Status tracken
         self._unmute_after_response = False  # Security Gate: Nach AI-Response auto-unmute
 
+        # AI State Tracking
+        self._ai_state = "idle"
+        self._current_response_has_audio = False
+        self._usage = {
+            "input_text_tokens": 0,
+            "input_audio_tokens": 0,
+            "output_text_tokens": 0,
+            "output_audio_tokens": 0,
+        }
+
         # Tools und Instructions kommen vom AgentManager
         self._tools: list[dict] = []
         self._instructions: str = ""
@@ -61,6 +71,8 @@ class VoiceClient:
         self.on_interruption: Optional[Callable[[], None]] = None
         self.on_function_call: Optional[Callable[[str, str, dict], None]] = None
         self.on_debug_event: Optional[Callable[[str, dict], None]] = None
+        self.on_ai_state_changed: Optional[Callable] = None
+        self.on_usage_update: Optional[Callable] = None
 
     @property
     def model(self) -> str:
@@ -88,6 +100,13 @@ class VoiceClient:
         self._instructions = instructions
         logger.info(f"VoiceClient konfiguriert: {len(tools)} Tools, {len(instructions)} Zeichen Instructions")
 
+    async def _set_ai_state(self, state: str):
+        """Setzt den AI-Status und benachrichtigt Listener."""
+        if state != self._ai_state:
+            self._ai_state = state
+            if self.on_ai_state_changed:
+                await self.on_ai_state_changed(state)
+
     @property
     def is_connected(self) -> bool:
         """Ist die WebSocket-Verbindung aktiv?"""
@@ -114,6 +133,15 @@ class VoiceClient:
             await self._configure_session()
 
             self._receive_task = asyncio.create_task(self._receive_loop())
+
+            # Reset usage fuer neuen Call
+            self._usage = {
+                "input_text_tokens": 0,
+                "input_audio_tokens": 0,
+                "output_text_tokens": 0,
+                "output_audio_tokens": 0,
+            }
+            await self._set_ai_state("listening")
 
             logger.info("OpenAI Realtime API verbunden")
 
@@ -241,6 +269,7 @@ class VoiceClient:
         # --- Response Lifecycle Tracking (Finding #4) ---
         if event_type == "response.created":
             self._response_in_progress = True
+            self._current_response_has_audio = False
 
         elif event_type == "response.done":
             self._response_in_progress = False
@@ -250,11 +279,30 @@ class VoiceClient:
                 self._unmute_after_response = False
                 logger.info("[OpenAI] Auto-unmute nach Security-Response")
 
+            # Usage tracking
+            response_data = event.get("response", {})
+            usage = response_data.get("usage", {})
+            if usage:
+                input_details = usage.get("input_token_details", {})
+                output_details = usage.get("output_token_details", {})
+                self._usage["input_text_tokens"] += input_details.get("text_tokens", 0)
+                self._usage["input_audio_tokens"] += input_details.get("audio_tokens", 0)
+                self._usage["output_text_tokens"] += output_details.get("text_tokens", 0)
+                self._usage["output_audio_tokens"] += output_details.get("audio_tokens", 0)
+                if self.on_usage_update:
+                    await self.on_usage_update(dict(self._usage))
+
+            await self._set_ai_state("listening")
+
         # --- Audio Events ---
         elif event_type == "response.audio.delta":
             audio_b64 = event.get("delta", "")
             if audio_b64 and not self.muted:
                 audio_bytes = base64.b64decode(audio_b64)
+
+                if not self._current_response_has_audio:
+                    self._current_response_has_audio = True
+                    await self._set_ai_state("speaking")
 
                 if not hasattr(self, '_audio_chunk_count'):
                     self._audio_chunk_count = 0
@@ -273,11 +321,13 @@ class VoiceClient:
             if self._unmute_after_response:
                 self.muted = False
                 self._unmute_after_response = False
+            await self._set_ai_state("user_speaking")
             if self.on_interruption:
                 await self.on_interruption()
 
         elif event_type == "input_audio_buffer.speech_stopped":
             logger.info("[OpenAI] Sprache beendet")
+            await self._set_ai_state("thinking")
 
         # --- Transcription ---
         elif event_type == "conversation.item.input_audio_transcription.completed":
@@ -368,6 +418,7 @@ class VoiceClient:
             self._response_in_progress = True
             response_event = {"type": "response.create"}
             await self._ws.send_str(json.dumps(response_event))
+            await self._set_ai_state("thinking")
 
             logger.info(f"[OpenAI] Function Ergebnis gesendet fuer call_id={call_id}")
 
@@ -434,5 +485,7 @@ class VoiceClient:
         self._sent_audio_count = 0
         self._response_in_progress = False
         self._unmute_after_response = False
+        self._current_response_has_audio = False
+        await self._set_ai_state("idle")
 
         logger.info("OpenAI Realtime API getrennt")

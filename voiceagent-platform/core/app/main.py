@@ -55,6 +55,26 @@ _audio_stats = {
 }
 
 
+# ============== OpenAI Realtime Pricing ($/1M tokens) ==============
+
+_PRICING = {
+    "input_text": 5.00,
+    "input_audio": 100.00,
+    "output_text": 20.00,
+    "output_audio": 200.00,
+}
+
+
+def _calculate_cost(usage: dict) -> float:
+    """Berechnet Kosten in USD basierend auf Token-Usage."""
+    cost = 0.0
+    cost += usage.get("input_text_tokens", 0) * _PRICING["input_text"] / 1_000_000
+    cost += usage.get("input_audio_tokens", 0) * _PRICING["input_audio"] / 1_000_000
+    cost += usage.get("output_text_tokens", 0) * _PRICING["output_text"] / 1_000_000
+    cost += usage.get("output_audio_tokens", 0) * _PRICING["output_audio"] / 1_000_000
+    return cost
+
+
 # ============== Beep-Ton fuer Security Gate ==============
 
 def _generate_beep(freq=800, duration_ms=150, sample_rate=48000, volume=0.3):
@@ -410,6 +430,27 @@ async def on_call_ended(reason: str):
     })
 
 
+async def on_ai_state_changed(state: str):
+    """AI-Status hat sich geaendert (idle/listening/user_speaking/thinking/speaking)."""
+    ws_manager: ConnectionManager = app_state["ws_manager"]
+    await ws_manager.broadcast({
+        "type": "ai_state",
+        "state": state,
+    })
+
+
+async def on_usage_update(usage: dict):
+    """Token-Usage Update von OpenAI - Kosten berechnen und broadcasten."""
+    ws_manager: ConnectionManager = app_state["ws_manager"]
+    cost = _calculate_cost(usage)
+    await ws_manager.broadcast({
+        "type": "call_cost",
+        "cost_usd": round(cost, 6),
+        "cost_cents": round(cost * 100, 2),
+        "usage": usage,
+    })
+
+
 async def on_agent_changed(old_agent: str, new_agent: str):
     """Agent wurde gewechselt."""
     ws_manager: ConnectionManager = app_state["ws_manager"]
@@ -499,6 +540,8 @@ async def lifespan(app: FastAPI):
     voice_client.on_transcript = on_transcript
     voice_client.on_interruption = on_interruption
     voice_client.on_function_call = on_function_call
+    voice_client.on_ai_state_changed = on_ai_state_changed
+    voice_client.on_usage_update = on_usage_update
 
     # SIP Client starten
     await sip_client.start()
