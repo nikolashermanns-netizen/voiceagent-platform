@@ -53,6 +53,7 @@ class VoiceClient:
         self._model = DEFAULT_MODEL
         self._response_in_progress = False  # Finding #4: Response-Status tracken
         self._unmute_after_response = False  # Security Gate: Nach AI-Response auto-unmute
+        self._text_only = False  # Security Gate: Nur Text-Modus (kein Audio-Output)
 
         # AI State Tracking
         self._ai_state = "idle"
@@ -145,17 +146,19 @@ class VoiceClient:
         logger.info(f"Model Live-Switch abgeschlossen: {model}")
         return True
 
-    def configure_for_agent(self, tools: list[dict], instructions: str):
+    def configure_for_agent(self, tools: list[dict], instructions: str, text_only: bool = False):
         """
         Konfiguriert den Client fuer einen bestimmten Agent.
 
         Args:
             tools: OpenAI Function-Calling Tool-Definitionen
             instructions: System-Prompt
+            text_only: Wenn True, wird Audio-Output deaktiviert (modalities=["text"])
         """
         self._tools = tools
         self._instructions = instructions
-        logger.info(f"VoiceClient konfiguriert: {len(tools)} Tools, {len(instructions)} Zeichen Instructions")
+        self._text_only = text_only
+        logger.info(f"VoiceClient konfiguriert: {len(tools)} Tools, {len(instructions)} Zeichen Instructions, text_only={text_only}")
 
     async def _set_ai_state(self, state: str):
         """Setzt den AI-Status und benachrichtigt Listener."""
@@ -211,10 +214,13 @@ class VoiceClient:
         if not self._ws:
             return
 
+        # Security Agent: text-only Modus verhindert Audio-Output strukturell
+        modalities = ["text"] if self._text_only else ["text", "audio"]
+
         config = {
             "type": "session.update",
             "session": {
-                "modalities": ["text", "audio"],
+                "modalities": modalities,
                 "instructions": self._instructions,
                 "voice": "alloy",
                 "input_audio_format": "pcm16",
@@ -233,17 +239,19 @@ class VoiceClient:
                 "tool_choice": "auto"
             }
         }
+        logger.info(f"Session modalities: {modalities}")
 
         await self._ws.send_str(json.dumps(config))
         logger.info(f"Session konfiguriert mit {len(self._tools)} Tools")
 
-    async def update_session(self, tools: list[dict] = None, instructions: str = None):
+    async def update_session(self, tools: list[dict] = None, instructions: str = None, text_only: bool = None):
         """
         Aktualisiert die laufende Session (z.B. bei Agent-Wechsel).
 
         Args:
             tools: Neue Tool-Definitionen (optional)
             instructions: Neue Instructions (optional)
+            text_only: Wenn gesetzt, aendert den Audio-Modus
         """
         if not self._ws or not self._running:
             return
@@ -255,6 +263,9 @@ class VoiceClient:
         if instructions is not None:
             self._instructions = instructions
             session_update["instructions"] = instructions
+        if text_only is not None:
+            self._text_only = text_only
+            session_update["modalities"] = ["text"] if text_only else ["text", "audio"]
 
         if session_update:
             config = {
@@ -262,7 +273,7 @@ class VoiceClient:
                 "session": session_update
             }
             await self._ws.send_str(json.dumps(config))
-            logger.info("Session aktualisiert")
+            logger.info(f"Session aktualisiert (text_only={self._text_only})")
 
     async def trigger_greeting(self):
         """Loest die initiale Begruessung aus."""

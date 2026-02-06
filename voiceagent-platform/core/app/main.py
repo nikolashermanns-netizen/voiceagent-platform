@@ -5,6 +5,7 @@ Verbindet alle Komponenten: SIP, AI, Agents, Tasks, WebSocket.
 """
 
 import asyncio
+import json
 import logging
 import math
 import os
@@ -55,6 +56,10 @@ _audio_stats = {
     "caller_bytes": 0,
     "ai_bytes": 0,
 }
+
+# ============== Call Transcript Accumulator ==============
+_call_transcript = []
+_call_started_at = None
 
 
 # ============== OpenAI Realtime Pricing ($/1M tokens) ==============
@@ -227,12 +232,14 @@ async def on_incoming_call(caller_id: str, remote_ip: str = None):
         logger.info(f"WHITELIST: Anruf von {caller_id} - Security-Code wird uebersprungen")
 
     # Reset
-    global _call_cost_usd, _last_usage
+    global _call_cost_usd, _last_usage, _call_transcript, _call_started_at
     _audio_stats["caller_to_ai"] = 0
     _audio_stats["ai_to_caller"] = 0
     _audio_stats["caller_bytes"] = 0
     _audio_stats["ai_bytes"] = 0
     _call_cost_usd = 0.0
+    _call_transcript = []
+    _call_started_at = datetime.utcnow()
     _set_model_state("mini", user_chosen=True)
     _last_usage = {
         "input_text_tokens": 0, "input_audio_tokens": 0,
@@ -255,9 +262,12 @@ async def on_incoming_call(caller_id: str, remote_ip: str = None):
         agent_manager.set_call_unlocked(True)
 
     # Voice Client konfigurieren mit Tools/Instructions vom aktiven Agent
+    # Security Agent: text_only=True verhindert Audio-Output strukturell
+    is_security = agent_manager.active_agent_name == "security_agent"
     voice_client.configure_for_agent(
         tools=agent_manager.get_tools(),
-        instructions=agent_manager.get_instructions()
+        instructions=agent_manager.get_instructions(),
+        text_only=is_security
     )
 
     # Anruf annehmen und AI verbinden
@@ -348,6 +358,8 @@ async def on_transcript(role: str, text: str, is_final: bool):
     # Transkript an Router fuer Intent-Erkennung
     if is_final and text:
         agent_router.add_transcript(role, text)
+        # Transcript fuer Call-History speichern
+        _call_transcript.append({"role": role, "text": text})
 
     await ws_manager.broadcast({
         "type": "transcript",
@@ -465,9 +477,11 @@ async def on_function_call(call_id: str, name: str, arguments: dict) -> str:
             _set_model_state(model_key, user_chosen=True)
 
             # Tools/Instructions VOR Reconnect konfigurieren
+            is_sec = agent_manager.active_agent_name == "security_agent"
             voice_client.configure_for_agent(
                 agent_manager.get_tools(),
-                agent_manager.get_instructions()
+                agent_manager.get_instructions(),
+                text_only=is_sec
             )
             success = await voice_client.switch_model_live(model_id)
 
@@ -514,7 +528,8 @@ async def on_function_call(call_id: str, name: str, arguments: dict) -> str:
             if needs_model_switch and voice_client and voice_client.is_connected:
                 # Model-Switch: configure_for_agent VOR Reconnect damit neue Tools geladen werden
                 _set_model_state(target_key)
-                voice_client.configure_for_agent(new_tools, new_instructions)
+                is_sec = agent_manager.active_agent_name == "security_agent"
+                voice_client.configure_for_agent(new_tools, new_instructions, text_only=is_sec)
                 await voice_client.switch_model_live(target_model)
                 logger.info(f"Agent-Switch + Model-Switch: -> {target_agent} ({target_key})")
 
@@ -527,9 +542,11 @@ async def on_function_call(call_id: str, name: str, arguments: dict) -> str:
             else:
                 # Kein Model-Switch: Session normal aktualisieren
                 if voice_client and voice_client.is_connected:
+                    is_sec = agent_manager.active_agent_name == "security_agent"
                     await voice_client.update_session(
                         tools=new_tools,
-                        instructions=new_instructions
+                        instructions=new_instructions,
+                        text_only=is_sec
                     )
 
             display = agent_manager.active_agent.display_name if agent_manager.active_agent else target_agent
@@ -572,9 +589,14 @@ async def on_call_ended(reason: str):
     db = app_state.get("db")
     call_id = app_state.pop("_current_call_id", None)
     if db and call_id:
+        now = datetime.utcnow()
+        duration = int((now - _call_started_at).total_seconds()) if _call_started_at else 0
+        cost_cents = round(_call_cost_usd * 100, 2)
+        transcript_json = json.dumps(_call_transcript, ensure_ascii=False)
         await db.execute(
-            "UPDATE calls SET ended_at = ? WHERE id = ?",
-            (datetime.utcnow().isoformat(), call_id)
+            """UPDATE calls SET ended_at = ?, duration_seconds = ?,
+               cost_cents = ?, transcript = ? WHERE id = ?""",
+            (now.isoformat(), duration, cost_cents, transcript_json, call_id)
         )
 
     await agent_manager.end_call()
