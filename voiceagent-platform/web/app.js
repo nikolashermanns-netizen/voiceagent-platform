@@ -97,6 +97,7 @@
         DOM.callerActionsNumber = document.getElementById('caller-actions-number');
         DOM.btnAddBlacklist = document.getElementById('btn-add-blacklist');
         DOM.btnAddWhitelist = document.getElementById('btn-add-whitelist');
+        DOM.callHistoryList = document.getElementById('call-history-list');
         DOM.agentsList     = document.getElementById('agents-list');
         DOM.firewallStatus = document.getElementById('firewall-status');
         DOM.btnFirewallToggle = document.getElementById('btn-firewall-toggle');
@@ -864,6 +865,35 @@
                 DOM.whitelistList.appendChild(div);
             });
         },
+
+        updateCallHistory: function (entries) {
+            DOM.callHistoryList.innerHTML = '';
+            if (!entries || entries.length === 0) {
+                DOM.callHistoryList.innerHTML = '<div class="empty-state">Keine Anrufe</div>';
+                return;
+            }
+
+            entries.forEach(function (entry) {
+                var div = document.createElement('div');
+                div.className = 'call-history-item';
+
+                var date = entry.last_call ? new Date(entry.last_call).toLocaleString('de-DE') : '';
+                var count = entry.call_count || 1;
+
+                div.innerHTML =
+                    '<div class="call-history-item__info">' +
+                        '<span class="call-history-item__number">' + esc(entry.caller_id || '') + '</span>' +
+                        '<span class="call-history-item__meta">' + esc(date) +
+                        (count > 1 ? ' — ' + count + ' Anrufe' : '') + '</span>' +
+                    '</div>' +
+                    '<div class="call-history-item__actions">' +
+                        '<button class="btn btn--small btn--danger" data-history-blacklist="' + escAttr(entry.caller_id || '') + '" title="Zur Blacklist">B</button>' +
+                        '<button class="btn btn--small btn--success" data-history-whitelist="' + escAttr(entry.caller_id || '') + '" title="Zur Whitelist">W</button>' +
+                    '</div>';
+
+                DOM.callHistoryList.appendChild(div);
+            });
+        },
     };
 
     // ============================================
@@ -970,6 +1000,35 @@
         fetch('/whitelist/' + encodeURIComponent(callerId), { method: 'DELETE' })
             .then(function () { fetchWhitelist(); })
             .catch(function (e) { addDebug('[API] Whitelist Remove: ' + e.message); });
+    }
+
+    function fetchCallHistory() {
+        fetch('/calls/history')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                UI.updateCallHistory(data.entries || []);
+            })
+            .catch(function (e) { addDebug('[API] Call History: ' + e.message); });
+    }
+
+    function addToBlacklistFromHistory(callerId) {
+        fetch('/blacklist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ caller_id: callerId, reason: 'Manuell via Dashboard' }),
+        })
+            .then(function () { fetchBlacklist(); fetchCallHistory(); })
+            .catch(function (e) { addDebug('[API] Blacklist Add: ' + e.message); });
+    }
+
+    function addToWhitelistFromHistory(callerId) {
+        fetch('/whitelist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ caller_id: callerId }),
+        })
+            .then(function () { fetchWhitelist(); fetchCallHistory(); })
+            .catch(function (e) { addDebug('[API] Whitelist Add: ' + e.message); });
     }
 
     function toggleFirewall() {
@@ -1156,6 +1215,19 @@
             DOM.btnAddWhitelist.addEventListener('click', addCurrentCallerToWhitelist);
         }
 
+        // Call History: Event delegation fuer B/W Buttons
+        DOM.callHistoryList.addEventListener('click', function (e) {
+            var blBtn = e.target.closest('[data-history-blacklist]');
+            if (blBtn) {
+                addToBlacklistFromHistory(blBtn.getAttribute('data-history-blacklist'));
+                return;
+            }
+            var wlBtn = e.target.closest('[data-history-whitelist]');
+            if (wlBtn) {
+                addToWhitelistFromHistory(wlBtn.getAttribute('data-history-whitelist'));
+            }
+        });
+
         if (DOM.btnRefreshIdeas) {
             DOM.btnRefreshIdeas.addEventListener('click', fetchIdeas);
         }
@@ -1184,8 +1256,10 @@
         setInterval(fetchTasks, 10000);
         setInterval(fetchBlacklist, 10000);
         setInterval(fetchWhitelist, 10000);
+        setInterval(fetchCallHistory, 10000);
         fetchBlacklist();
         fetchWhitelist();
+        fetchCallHistory();
     }
 
     if (document.readyState === 'loading') {

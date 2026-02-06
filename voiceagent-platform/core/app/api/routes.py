@@ -321,6 +321,26 @@ def setup_routes(app_state):
             raise HTTPException(status_code=404, detail="Projekt nicht gefunden")
         return project.to_dict()
 
+    # ============== Call History ==============
+
+    @router.get("/calls/history")
+    async def get_call_history():
+        """Vergangene Anrufer (distinct, neueste zuerst)."""
+        db = app_state.get("db")
+        if not db:
+            return {"entries": []}
+        entries = await db.fetch_all(
+            """SELECT caller_id,
+                      MAX(started_at) as last_call,
+                      COUNT(*) as call_count
+               FROM calls
+               WHERE caller_id IS NOT NULL
+               GROUP BY caller_id
+               ORDER BY MAX(started_at) DESC
+               LIMIT 50"""
+        )
+        return {"entries": entries}
+
     # ============== Blacklist ==============
 
     @router.get("/blacklist")

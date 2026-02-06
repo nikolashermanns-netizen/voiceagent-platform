@@ -768,6 +768,47 @@ body {
     font-family: var(--font-mono);
 }
 
+/* === Call History === */
+.call-history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--color-border);
+}
+.call-history-item__info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+.call-history-item__number {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--ctp-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.call-history-item__meta {
+    font-size: var(--font-size-sm);
+    color: var(--ctp-overlay0);
+}
+.call-history-item__actions {
+    display: flex;
+    gap: var(--space-xs);
+    flex-shrink: 0;
+}
+.call-history-item__actions .btn {
+    min-width: 28px;
+    min-height: 28px;
+    padding: var(--space-xs);
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+    line-height: 1;
+}
+
 /* === Firewall === */
 .firewall-section { margin-top: var(--space-xl); }
 .firewall-controls {

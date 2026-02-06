@@ -9,7 +9,9 @@ import logging
 import math
 import os
 import struct
+import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -272,6 +274,16 @@ async def on_incoming_call(caller_id: str, remote_ip: str = None):
             await voice_client.trigger_greeting()
 
         asyncio.create_task(delayed_greeting())
+
+    # Anruf in DB aufzeichnen
+    db = app_state.get("db")
+    if db:
+        _current_call_id = str(uuid.uuid4())
+        app_state["_current_call_id"] = _current_call_id
+        await db.execute(
+            "INSERT INTO calls (id, caller_id, started_at) VALUES (?, ?, ?)",
+            (_current_call_id, caller_id, datetime.utcnow().isoformat())
+        )
 
     await ws_manager.broadcast({
         "type": "call_active",
@@ -555,6 +567,15 @@ async def on_call_ended(reason: str):
     logger.info(f"Anruf beendet: {reason}")
 
     _cancel_security_timeout()
+
+    # Anruf-Ende in DB aufzeichnen
+    db = app_state.get("db")
+    call_id = app_state.pop("_current_call_id", None)
+    if db and call_id:
+        await db.execute(
+            "UPDATE calls SET ended_at = ? WHERE id = ?",
+            (datetime.utcnow().isoformat(), call_id)
+        )
 
     await agent_manager.end_call()
     await voice_client.disconnect()
